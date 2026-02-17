@@ -1,0 +1,384 @@
+html, body {
+  font-family: Arial, sans-serif;
+  line-height: 1.4;
+  margin: 0;
+  padding: 0;
+  color: #333;
+  font-size: 12px;
+  height: 100%;
+}
+
+#app {
+  max-width: 100%;
+  height: 100%;
+  margin: 0 auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+}
+
+h1 {
+  font-size: 1.4em;
+  margin: 0;
+}
+
+h2 {
+  color: #1c2a39;
+  border-bottom: 2px solid #3498db;
+  padding-bottom: 3px;
+  margin-top: 10px;
+  margin-bottom: 5px;
+  font-size: 1.2em;
+}
+
+h3 {
+  color: #000000;
+  margin-top: 5px;
+  margin-bottom: 10px;
+  font-size: 1.1em;
+}
+
+main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  font-size: 1em;
+}
+
+#leftColumn {
+  width: 350px;
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+#rightColumn {
+  flex: 1;
+  overflow-y: auto;
+  padding-left: 10px;
+}
+
+#ccpContainer {
+  width: 100%;
+  max-width: 325px;
+  height: 450px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.control-group {
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 5px;
+  margin-bottom: 5px;
+}
+
+.control-group-transcribe {
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 5px;
+  margin-bottom: 5px;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.control-group-translate {
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 5px;
+  margin-bottom: 5px;
+  min-height: 212px;
+  display: flex;
+  flex-direction: column;
+}
+
+.control-group-polly {
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 5px;
+  margin-bottom: 5px;
+  min-height: 204px;
+  display: flex;
+  flex-direction: column;
+}
+
+.customer-controls {
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 5px;
+  margin-bottom: 5px;
+  min-height: 150px;
+  height: 100%;
+}
+.agent-controls {
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 5px;
+  margin-bottom: 5px;
+  min-height: 150px;
+  height: 100%;
+}
+.input-group, .button-group, .checkbox-group, .output-group {
+  margin-bottom: 5px;
+  font: 1em sans-serif;
+}
+
+.output-group {
+  margin-top: 10px;
+  margin-bottom: 5px;
+  font: 1em sans-serif;
+  margin-top: auto;
+}
+
+.checkbox-group {
+  margin-top: 10px;
+  margin-bottom: 5px;
+  font: 1em sans-serif;
+  display: flex;
+  align-items: center;
+}
+
+.checkbox-group input[type="checkbox"] {
+  margin-right: 5px;
+}
+
+.volume-group {
+  display: flex;
+  align-items: center;
+  margin-bottom: 5px;
+  font: 1em sans-serif;
+}
+
+label {
+  display: block;
+  margin-right: 5px;
+  margin-bottom: 2px;
+  font-weight: bold;
+  font-size: 1em;
+}
+
+select {
+  width: 62%;
+  padding: 2px;
+  margin-bottom: 3px;
+  margin-right: 5px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1em;
+}
+
+input[type="text"], input[type="range"] {
+  width: 60%;
+  padding: 5px;
+  margin-bottom: 3px;
+  margin-right: 5px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1em;
+}
+
+button {
+  padding: 3px 6px;
+  margin-right: 3px;
+  margin-bottom: 3px;
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  font-size: 1em;
+}
+
+button:hover {
+  background-color: #2980b9;
+}
+
+button:disabled {
+  background-color: #bdc3c7;  /* lighter gray color */
+  cursor: not-allowed;
+  opacity: 0.7;
+  /* Optional: remove hover effect when disabled */
+  pointer-events: none;
+}
+
+.volume-bar-container {
+  width: 100%;
+  background-color: #f0f0f0;
+  height: 10px;
+  margin-top: 3px;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.volume-bar {
+  width: 0%;
+  height: 100%;
+  background-color: #3498db;
+  transition: width 0.1s ease;
+  font-size: 0.9em;
+}
+
+.output-text {
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 5px;
+  min-height: 20px;
+  max-height: 80px;
+  overflow-y: auto;
+  font-size: 1em;
+}
+
+#transcribeTranslate {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+#transcribeTranslate > div {
+  flex-basis: calc(33% - 10px);
+}
+
+#audioPlayback {
+  background-color: #fff;
+  padding: 5px;
+  border-radius: 5px;
+  margin-top: 5px;
+}
+
+.audio-group {
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  margin-bottom: 5px;
+}
+
+.audio-group audio {
+  width: 100%;
+  height: 15px;
+  font-size: 0.9em;
+}
+
+.hidden {
+  display: none;
+}
+
+@media (max-width: 1200px) {
+  main {
+      flex-direction: column;
+  }
+
+  #leftColumn, #rightColumn {
+      width: 100%;
+      padding: 0;
+  }
+
+  #transcribeTranslate > div {
+      flex-basis: 100%;
+  }
+}
+
+.bg-pale-green {
+  background-color: #e8f5e9;  /* Pale green color */
+}
+
+.bg-pale-yellow {
+  background-color: #fffde7;  /* Pale yellow color */
+}
+
+.bg-none {
+  background-color: transparent;
+}
+
+.control-group-transcription {
+  height: 100%;
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 5px;
+  margin-bottom: 5px;
+  min-height: 782px;
+  max-height: 782px;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  position: relative;
+}
+
+.transcript-container {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: scroll;
+  padding: 10px;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.transcript-spacer {
+  flex-grow: 1;
+}
+
+.transcript-card {
+  max-width: 70%;
+  padding: 10px;
+  border-radius: 8px;
+  margin: 4px 0;
+  word-wrap: break-word;
+}
+
+.transcript-original {
+  font-size: 1em;
+  margin-bottom: 8px;
+}
+
+.transcript-separator {
+  height: 1px;
+  background-color: rgba(255, 255, 255, 0.2);
+  margin: 8px 0;
+}
+
+.fromAgent {
+  align-self: flex-end;
+  background-color: #007bff;
+  color: white;
+}
+
+.fromAgent .transcript-separator {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.toAgent {
+  align-self: flex-start;
+  background-color: #e9ecef;
+  color: black;
+}
+
+.toAgent .transcript-separator {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.transcript-translated {
+  font-size: 0.95em;
+  font-style: italic;
+  opacity: 0.9;
+}
