@@ -1,0 +1,47 @@
+{
+  "name": "cdk-stacks",
+  "version": "0.1.0",
+  "bin": {
+    "cdk-stacks": "bin/cdk-stacks.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "cdk": "cdk",
+    "echo:cdk-version": "cdk --version",
+    "configure": "node config/configure.js -il",
+    "configure:test": "node config/configure.js -ilt",
+    "configure:delete": "node config/configure.js -d",
+    "configure:help": "node config/configure.js -h",
+    "install:webapp": "cd ../webapp && npm install",
+    "install:cdk-stacks": "npm install",
+    "install:all": "npm run install:webapp && npm run install:cdk-stacks",
+    "echo:web-app-root-prefix": "node -e 'var config=require(`./config/config.params.json`); console.log(`${config.WebAppRootPrefix}`)' ",
+    "echo:cdk-frontend-stack-name-param": "node -e 'var config=require(`./config/config.params.json`); console.log(`${config.hierarchy}outputParameters/CdkFrontendStackName`)' ",
+    "echo:cdk-frontend-stack-physical-name": "aws ssm get-parameter --query 'Parameter'.'Value' --name $(npm run --silent echo:cdk-frontend-stack-name-param) --output text",
+    "echo:web-app-bucket": "aws cloudformation describe-stacks --stack-name $(npm run --silent echo:cdk-frontend-stack-physical-name) --query 'Stacks[0].Outputs[?OutputKey==`webAppBucket`].OutputValue' --output text",
+    "sync-config": "aws s3 cp s3://$(npm run --silent echo:web-app-bucket)/$(npm run --silent echo:web-app-root-prefix)frontend-config.js ../webapp/",
+    "build:webapp": "cd ../webapp && npm run-script build",
+    "build:webapp:gitbash": "cd ../webapp && npm run-script build:gitbash",
+    "cdk:remove:context": "rm -f cdk.context.json",
+    "cdk:deploy": "npm run cdk:remove:context && cdk deploy --all --disable-rollback",
+    "cdk:deploy:gitbash": "npm run cdk:remove:context && winpty cdk.cmd deploy --all --disable-rollback",
+    "build:deploy:all": "npm run build:webapp && npm run cdk:deploy",
+    "build:deploy:all:gitbash": "npm run build:webapp:gitbash && npm run cdk:deploy:gitbash"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "22.7.9",
+    "aws-cdk": "2.177.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.6.3"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ssm": "^3.699.0",
+    "aws-cdk-lib": "2.177.0",
+    "constructs": "^10.0.0"
+  }
+}

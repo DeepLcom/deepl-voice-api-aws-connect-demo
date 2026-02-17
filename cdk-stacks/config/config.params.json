@@ -1,0 +1,77 @@
+{
+  "CdkAppName": "AmazonConnectV2V",
+  "CdkBackendStack": "AmazonConnectV2VBackend",
+  "CdkFrontendStack": "AmazonConnectV2VFrontend",
+  "WebAppRootPrefix": "WebAppRoot/",
+  "WebAppStagingPrefix": "WebAppStaging/",
+  "hierarchy": "/AmazonConnectV2V/",
+  "parameters": [
+    {
+      "name": "cognitoDomainPrefix",
+      "cliFormat": "cognito-domain-prefix",
+      "description": "Amazon Cognito hosted UI domain prefix, where users will be redirected during the login process. The domain prefix has to be unique, between 1 and 63 characters long, contains no special characters, and no keywords: aws, amazon, or cognito. You could put your Amazon Connect Instance Alias to it, for example: connect-v2v-instance-alias",
+      "required": true
+    },
+    {
+      "name": "cognitoCallbackUrls",
+      "cliFormat": "cognito-callback-urls",
+      "description": "Please provide a callback URL for the Amazon Cognito authorization server to call after users are authenticated. This should be set to your application root URL. For example: https://aaaabbbbcccc.cloudfront.net",
+      "required": true
+    },
+    {
+      "name": "cognitoLogoutUrls",
+      "cliFormat": "cognito-logout-urls",
+      "description": "Please provide a logout URL where user is to be redirected after logging out.",
+      "required": true
+    },
+    {
+      "name": "connectInstanceURL",
+      "cliFormat": "connect-instance-url",
+      "description": "Amazon Connect instance URL that solution will use. For example: https://connect-instance-alias.my.connect.aws (or https://connect-instance-alias.awsapps.com)",
+      "required": true
+    },
+    {
+      "name": "connectInstanceRegion",
+      "cliFormat": "connect-instance-region",
+      "description": "Amazon Connect instance Region that solution will use. For example: us-east-1",
+      "required": true
+    },
+    {
+      "name": "transcribeRegion",
+      "cliFormat": "transcribe-region",
+      "description": "Amazon Transcribe Region that solution will use. For example: us-east-1",
+      "defaultValue": "us-east-1",
+      "required": true
+    },
+    {
+      "name": "translateRegion",
+      "cliFormat": "translate-region",
+      "description": "Amazon Translate Region that solution will use. For example: us-east-1",
+      "defaultValue": "us-east-1",
+      "required": true
+    },
+    {
+      "name": "translateProxyEnabled",
+      "cliFormat": "translate-proxy-enabled",
+      "description": "When enabled, webapp requests to Amazon Translate are proxied through Amazon Cloudfront (recommended to avoid CORS)",
+      "defaultValue": true,
+      "required": true,
+      "boolean": true
+    },
+    {
+      "name": "pollyRegion",
+      "cliFormat": "polly-region",
+      "description": "Amazon Polly Region that solution will use. For example: us-east-1",
+      "defaultValue": "us-east-1",
+      "required": true
+    },
+    {
+      "name": "pollyProxyEnabled",
+      "cliFormat": "polly-proxy-enabled",
+      "description": "When enabled, webapp requests to Amazon Polly are proxied through Amazon Cloudfront (recommended to avoid CORS)",
+      "defaultValue": true,
+      "required": true,
+      "boolean": true
+    }
+  ]
+}
