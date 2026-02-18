@@ -299,7 +299,7 @@ const initEventListeners = () => {
   });
   //Synthesis Customer UI buttons
   CCP_V2V.UI.customerVoiceIdSaveButton.addEventListener("click", () => {
-    addUpdateLocalStorageKey("customerVoiceIdSaveButton", CCP_V2V.UI.customerVoiceIdSelect.value);
+    addUpdateLocalStorageKey("customerVoiceId", CCP_V2V.UI.customerVoiceIdSelect.value);
   });
 
   CCP_V2V.UI.agentMuteTranscriptionButton.addEventListener("click", () => {
@@ -752,7 +752,8 @@ async function customerStartStreaming() {
     DeepLVoiceClientCustomer = new DeepLVoiceClient({
       onTranscription: handleCustomerTranscript,
       onTranslation: handleCustomerTranslateText,
-      onAudio: handleCustomerSynthesis
+      onAudio: handleCustomerSynthesis,
+      onLatencyUpdate: handleCustomerLatencyUpdate,
     });
 
     await DeepLVoiceClientCustomer.startSession({
@@ -789,7 +790,8 @@ async function customerStopStreaming() {
 
   if (DeepLVoiceClientCustomer) {
     DeepLVoiceClientCustomer.endAudio();
-    DeepLVoiceClientCustomer.diconnect();
+    DeepLVoiceClientCustomer.disconnect();
+    DeepLVoiceClientCustomer.resetLatencyStats();
     DeepLVoiceClientCustomer = null;
   }
 
@@ -819,7 +821,8 @@ async function agentStartStreaming() {
     DeepLVoiceClientAgent = new DeepLVoiceClient({
       onTranscription: handleAgentTranscript,
       onTranslation: handleAgentTranslateText,
-      onAudio: handleAgentSynthesis
+      onAudio: handleAgentSynthesis,
+      onLatencyUpdate: handleAgentLatencyUpdate,
     });
   
     await DeepLVoiceClientAgent.startSession({
@@ -859,7 +862,8 @@ async function agentStopStreaming() {
 
   if (DeepLVoiceClientAgent) {
     DeepLVoiceClientAgent.endAudio();
-    DeepLVoiceClientAgent.diconnect();
+    DeepLVoiceClientAgent.disconnect();
+    DeepLVoiceClientAgent.resetLatencyStats();
     DeepLVoiceClientAgent = null;
   }
 
@@ -943,14 +947,14 @@ async function loadTranslateLanguageCodes() {
   }
 }
 
-async function handleCustomerTranscript(text) {
+async function handleCustomerTranscript(text, latency) {
   if (isStringUndefinedNullEmpty(text)) return;
 
   setTimeout(() => {
     setBackgroundColour(CCP_V2V.UI.customerTranscriptionTextOutputDiv, "bg-pale-green");
     // If the text content ends in end of sentence punctuation, replace it
     const lastText = CCP_V2V.UI.customerTranscriptionTextOutputDiv.textContent
-    addTranscriptCard(text, null, "toAgent");
+    addTranscriptCard(text, null, "toAgent", latency);
     if (/[.!?]$/.test(lastText)) {
       CCP_V2V.UI.customerTranscriptionTextOutputDiv.textContent = text;
     } else {
@@ -959,7 +963,7 @@ async function handleCustomerTranscript(text) {
   }, 100);
 }
 
-async function handleCustomerTranslateText(text) {
+async function handleCustomerTranslateText(text, latency) {
   if (isStringUndefinedNullEmpty(text)) return;
 
   setTimeout(() => {
@@ -968,11 +972,11 @@ async function handleCustomerTranslateText(text) {
     } else {
       CCP_V2V.UI.customerTranslatedTextOutputDiv.textContent += text;
     }
-    addTranscriptCard(null, text, "toAgent");
+    addTranscriptCard(null, text, "toAgent", latency);
   }, 100);
 }
 
-async function handleAgentTranslateText(text) {
+async function handleAgentTranslateText(text, latency) {
   if (isStringUndefinedNullEmpty(text)) return;
   setTimeout(() => {
     const lastText = CCP_V2V.UI.agentTranslatedTextOutputDiv.textContent
@@ -981,11 +985,11 @@ async function handleAgentTranslateText(text) {
     } else {
       CCP_V2V.UI.agentTranslatedTextOutputDiv.textContent += text;
     }
-    addTranscriptCard(null, text, "fromAgent");
+    addTranscriptCard(null, text, "fromAgent", latency);
   }, 100);
 }
 
-async function handleAgentTranscript(text) {
+async function handleAgentTranscript(text, latency) {
   if (isStringUndefinedNullEmpty(text)) return;
 
   setTimeout(() => {
@@ -996,7 +1000,7 @@ async function handleAgentTranscript(text) {
     } else {
       CCP_V2V.UI.agentTranscriptionTextOutputDiv.textContent += text;
     }
-    addTranscriptCard(text, null, "fromAgent");
+    addTranscriptCard(text, null, "fromAgent", latency);
   }, 100);
 }
 async function handleCustomerSynthesis(data) {
@@ -1037,6 +1041,70 @@ function handleAgentSynthesis(data) {
   }
 }
 
+// Update latency display
+function updateAgentLatencyDisplay(latencyData) {
+  const { type, current, average, min, max, p95 } = latencyData;
+  
+  const element = document.getElementById(`agent-latency-${type}`);
+  if (!element) return;
+  
+  const valueSpan = element.querySelector('.latency-value');
+  const statsDiv = element.querySelector('.latency-stats');
+  
+  // Update current value
+  valueSpan.textContent = `${Math.round(current)} ms`;
+  
+  // Color code based on latency
+  valueSpan.className = 'latency-value';
+  if (current < 2000) {
+    valueSpan.classList.add('latency-good');
+  } else if (current < 3000) {
+    valueSpan.classList.add('latency-ok');
+  } else {
+    valueSpan.classList.add('latency-bad');
+  }
+  
+  // Update stats
+  statsDiv.textContent = `Avg: ${Math.round(average)} | Min: ${Math.round(min)} | Max: ${Math.round(max)} | P95: ${Math.round(p95)}`;
+}
+
+// Update latency display
+function updateCustomerLatencyDisplay(latencyData) {
+  const { type, current, average, min, max, p95 } = latencyData;
+  
+  const element = document.getElementById(`customer-latency-${type}`);
+  if (!element) return;
+  
+  const valueSpan = element.querySelector('.latency-value');
+  const statsDiv = element.querySelector('.latency-stats');
+  
+  // Update current value
+  valueSpan.textContent = `${Math.round(current)} ms`;
+  
+  // Color code based on latency
+  valueSpan.className = 'latency-value';
+  if (current < 2000) {
+    valueSpan.classList.add('latency-good');
+  } else if (current < 3000) {
+    valueSpan.classList.add('latency-ok');
+  } else {
+    valueSpan.classList.add('latency-bad');
+  }
+  
+  // Update stats
+  statsDiv.textContent = `Avg: ${Math.round(average)} | Min: ${Math.round(min)} | Max: ${Math.round(max)} | P95: ${Math.round(p95)}`;
+}
+
+function handleCustomerLatencyUpdate(latency) {
+  updateCustomerLatencyDisplay(latency);
+  console.log(`customer latency: ${latency}`);
+}
+
+function handleAgentLatencyUpdate(latency) {
+  updateAgentLatencyDisplay(latency);
+  console.log(`agent latency: ${latency}`);
+}
+
 function loadVoiceIds() {
   CCP_V2V.UI.customerVoiceIdSelect.innerHTML = "";
   CCP_V2V.UI.agentVoiceIdSelect.innerHTML = "";
@@ -1072,7 +1140,7 @@ function setBackgroundColour(element, cssClass) {
   }
 }
 
-function addTranscriptCard(sourceText, translatedText, type) {
+function addTranscriptCard(sourceText, translatedText, type, latency) {
   let text = "";
   if (type == "fromAgent") {
     if (isStringUndefinedNullEmpty(sourceText)) return;
@@ -1102,6 +1170,9 @@ function addTranscriptCard(sourceText, translatedText, type) {
     // If the last text does not end with end of sentence punctuation, append the new text to it
     if (lastText && !/[.!?]$/.test(lastText.trim())) {
       lastTextElement.textContent += text;
+      // if (latency) {
+      //   lastTextElement.textContent += ` (${Math.round(latency)} ms)`;
+      // }
     } else {
       // Create original text element
       const textDiv = document.createElement("div");
