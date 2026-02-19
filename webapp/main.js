@@ -464,9 +464,6 @@ function onContactEnded(contact) {
 
 async function onContactDestroyed(contact) {
   console.info(`${LOGGER_PREFIX} - contact has been destroyed`, contact);
-  
-  await agentStopStreaming();
-  await customerStopStreaming();
   clearTranscriptCards();
 }
 
@@ -880,7 +877,11 @@ function toggleAgentTranscriptionMute() {
       //Mute the Mic so it is not streamed to Customer
       const selectedMic = CCP_V2V.UI.micSelect.value;
       const micConstraints = getMicrophoneConstraints(selectedMic);
-      IsAgentTranscriptionMuted ? ToCustomerAudioStreamManager.stopMicrophone() : ToCustomerAudioStreamManager.startMicrophone(micConstraints);
+      if (IsAgentTranscriptionMuted || !CCP_V2V.UI.agentStreamMicCheckbox.checked) {
+        ToCustomerAudioStreamManager.stopMicrophone();
+      } else {
+        ToCustomerAudioStreamManager.startMicrophone(micConstraints);
+      }
       CCP_V2V.UI.agentMuteTranscriptionButton.textContent = IsAgentTranscriptionMuted ? "Unmute" : "Mute";
     }
   }
