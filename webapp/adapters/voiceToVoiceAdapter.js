@@ -17,11 +17,26 @@ class DeepLVoiceClient {
     this.onTranscription = options.onTranscription || null;
     this.onTranslation = options.onTranslation || null;
     this.onAudio = options.onAudio || null;
+    this.onLatencyUpdate = options.onLatencyUpdate || null;
     this.onStreamEnd = null;
     this.onError = null;
     this.onConnect = null;
     this.onDisconnect = null;
     this.onAudioProcessingComplete = null;
+
+    // Track chunks with their cumulative audio time
+    this.audioChunks = [];  // { sentAt, audioStartMs, audioEndMs }
+    this.concludedTargetTranscriptTimes = [];  // { receivedAt, audioEndTime }
+    this.cumulativeAudioTime = 0;  // Total audio sent so far in ms
+    this.sampleRate = 48000;
+    this.bytesPerSample = 2;  // 16-bit audio
+    
+    this.latencyMetrics = {
+      transcription: [],      // Audio → Transcription
+      translation: [],        // Audio → Translation text
+      audioSynthesis: [],     // Translation text → Synthesized audio (NEW)
+      endToEnd: []           // Audio → Synthesized audio (total)
+    };
   }
 
   async getLanguages(type = "source") {
@@ -189,35 +204,94 @@ class DeepLVoiceClient {
   }
 
   handleMessage(data) {
+    const receiveTime = performance.now();
+
     try {
       const message = JSON.parse(data);
       console.log('Received message:', message);
       if (message.source_transcript_update) {
-        if (this.onTranscription) {
-            const sourceTranscriptUpdate = message.source_transcript_update;
-            const concludedText = sourceTranscriptUpdate.concluded
-                .map(item => item.text)
-                .join('');
-            console.log('Transcription update - concluded text:', concludedText);
-            this.onTranscription(concludedText);
-        }
+        const update = message.source_transcript_update;
+        if (update.concluded && update.concluded.length > 0) {
+            // Use END_TIME of the last concluded segment
+            const lastSegment = update.concluded[update.concluded.length - 1];
+            const audioEndTime = lastSegment.end_time;
+                      
+            // Find the chunk that contains this audio time
+            const chunk = this.findChunkByAudioTime(audioEndTime);
+            let latency = null;
+            
+            if (chunk) {
+                latency = receiveTime - chunk.sentAt;
+                
+                this.latencyMetrics.transcription.push(latency);
+                this.emitLatencyUpdate('transcription', latency);
+                
+                console.log(`📊 Transcription latency: ${Math.round(latency)}ms`);
+                console.log(`   Audio position: ${chunk.audioStartMs.toFixed(0)}-${chunk.audioEndMs.toFixed(0)}ms`);
+                console.log(`   Responded to audio at: ${audioEndTime}ms`);
+            } else {
+            }
+            if (this.onTranscription) {
+                const sourceTranscriptUpdate = message.source_transcript_update;
+                const concludedText = sourceTranscriptUpdate.concluded
+                    .map(item => item.text)
+                    .join('');
+                console.log('Transcription update - concluded text:', concludedText);
+                this.onTranscription(concludedText, latency);
+            }
+          }
       }
       else if (message.target_transcript_update) {
-        if (this.onTranslation) {
-          const targetTranscriptUpdate = message.target_transcript_update;
-          const concludedText = targetTranscriptUpdate.concluded
-              .map(item => item.text)
-              .join('');
-          console.log('Translation update - concluded text:', concludedText);
-          this.onTranslation(concludedText);
+        const update = message.target_transcript_update;
+        
+        if (update.concluded && update.concluded.length > 0) {
+            const lastSegment = update.concluded[update.concluded.length - 1];
+            const audioEndTime = lastSegment.end_time;
+
+            this.concludedTargetTranscriptTimes.push({ receivedAt: receiveTime, audioEndTime });
+            if (this.concludedTargetTranscriptTimes.length > 50) {
+                this.concludedTargetTranscriptTimes.shift();
+            }
+
+            const chunk = this.findChunkByAudioTime(audioEndTime);
+            let latency = null;
+
+            if (chunk) {
+                latency = receiveTime - chunk.sentAt;
+                
+                this.latencyMetrics.translation.push(latency);
+                this.emitLatencyUpdate('translation', latency);
+                
+                console.log(`📊 Translation latency: ${Math.round(latency)}ms`);
+            }
+
+            if (this.onTranslation) {
+                const targetTranscriptUpdate = message.target_transcript_update;
+                const concludedText = targetTranscriptUpdate.concluded
+                    .map(item => item.text)
+                    .join('');
+                console.log('Translation update - concluded text:', concludedText);
+                this.onTranslation(concludedText, latency);
+            }
         }
       }
       else if (message.target_media_chunk) {
-        if (this.onAudio) {
-          const targetMediaChunk = message.target_media_chunk;
-          const data = targetMediaChunk.data;
-          console.log('Received audio chunk - base64 length:', data[0].length);
-          this.onAudio(data);
+        const update = message.target_media_chunk;
+        
+        if (update.data && update.data.length > 0) {
+          if (this.concludedTargetTranscriptTimes.length > 0) {
+            const latestTargetTranscript = this.concludedTargetTranscriptTimes[this.concludedTargetTranscriptTimes.length - 1];
+            const synthesisLatency = receiveTime - latestTargetTranscript.receivedAt;
+            this.latencyMetrics.audioSynthesis.push(synthesisLatency);
+            this.emitLatencyUpdate('audioSynthesis', synthesisLatency);
+            console.log(`📊 Audio synthesis latency: ${Math.round(synthesisLatency)}ms`);
+          }
+          if (this.onAudio) {
+              const targetMediaChunk = message.target_media_chunk;
+              const data = targetMediaChunk.data;
+              console.log('Received audio chunk - base64 length:', data[0].length);
+              this.onAudio(data);
+          }
         }
       }
       else if (message.end_of_source_transcript) {
@@ -250,6 +324,69 @@ class DeepLVoiceClient {
         }
     }
   }
+  
+  emitLatencyUpdate(type, latency) {
+    if (this.onLatencyUpdate) {
+      const stats = this.getLatencyStats(type);
+      this.onLatencyUpdate({
+        type,
+        current: latency,
+        average: stats.average,
+        min: stats.min,
+        max: stats.max,
+        p95: stats.p95
+      });
+    }
+  }
+  
+  getLatencyStats(type) {
+    const metrics = this.latencyMetrics[type] || [];
+    if (metrics.length === 0) {
+      return { average: 0, min: 0, max: 0, p95: 0 };
+    }
+    
+    const sorted = [...metrics].sort((a, b) => a - b);
+    const sum = metrics.reduce((a, b) => a + b, 0);
+    
+    return {
+      average: sum / metrics.length,
+      min: sorted[0],
+      max: sorted[sorted.length - 1],
+      p95: sorted[Math.floor(sorted.length * 0.95)]
+    };
+  }
+  
+  resetLatencyStats() {
+    this.latencyMetrics = {
+      transcription: [],
+      translation: [],
+      audioSynthesis: [],
+      endToEnd: []
+    };
+    this.audioChunks = [];
+    this.cumulativeAudioTime = 0;
+    this.concludedTargetTranscriptTimes = [];
+  }
+
+  findChunkByAudioTime(audioTimeMs) {
+    // Find the chunk that contains this audio timestamp
+    for (let i = 0; i < this.audioChunks.length; i++) {
+      const chunk = this.audioChunks[i];
+      if (audioTimeMs >= chunk.audioStartMs && audioTimeMs <= chunk.audioEndMs) {
+        return chunk;
+      }
+    }
+    
+    // If exact match not found, find closest chunk before this time
+    for (let i = this.audioChunks.length - 1; i >= 0; i--) {
+      if (this.audioChunks[i].audioEndMs <= audioTimeMs) {
+        return this.audioChunks[i];
+      }
+    }
+    
+    return null;
+  }
+
   /**
      * Send audio data to the server
      * 
@@ -276,16 +413,38 @@ class DeepLVoiceClient {
     }
   }
 
-    sendAudio(chunk) {
+    sendAudio(audioBuffer) {
         if (!this.isConnected) {
             console.warn('websocket is not connected - cannot send audio chunk.');
             return;
         }
+        const sendTime = performance.now();
+        
+        // Calculate actual audio duration of this chunk
+        const numSamples = audioBuffer.length / this.bytesPerSample;
+        const durationMs = (numSamples / this.sampleRate) * 1000;
+        
+        // Track this chunk with precise audio timing
+        const chunk = {
+            sentAt: sendTime,
+            audioStartMs: this.cumulativeAudioTime,
+            audioEndMs: this.cumulativeAudioTime + durationMs
+        };
+        
+        this.audioChunks.push(chunk);
+        this.cumulativeAudioTime += durationMs;
+        
+        // Keep only last 100 chunks to prevent memory growth
+        if (this.audioChunks.length > 100) {
+        const removed = this.audioChunks.shift();
+        // Adjust cumulative time if needed (though not strictly necessary)
+        }
+        
         try {
-            const base64Audio = chunk.toString('base64');
+            const base64Audio = audioBuffer.toString('base64');
             const payload = JSON.stringify({
                 source_media_chunk: {
-                    data: base64Audio,
+                    data: base64Audio
                 }
             });
             this.ws.send(payload);

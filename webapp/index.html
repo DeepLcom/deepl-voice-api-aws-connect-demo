@@ -6,13 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <script src="lib/connect-rtc-1.1.26.min.js"></script>
     <script src="/frontend-config.js" type="text/javascript"></script>
-    <title>Amazon Connect V2V</title>
+    <title>DeepL V2V</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div id="app">
       <header>
-        <h1>Amazon Connect V2V</h1>
+        <h1>DeepL V2V</h1>
         <button id="logoutButton" class="hidden">Logout</button>
       </header>
 
@@ -115,66 +115,37 @@
               <h2>Customer Controls</h2>
               <div class="control-group-transcribe">
                 <h3>Audio</h3>
-                <!-- <div class="input-group">
-                  <label for="customerTranscribeLanguageSelect">Select Amazon Transcribe Language:</label>
-                  <select id="customerTranscribeLanguageSelect">
-                    <option style="font-size: 0.9em" value="">-- Select Language --</option>
-                  </select>
-                  <button id="customerTranscribeLanguageSaveButton">Save</button>
-                </div> -->
-                <!-- <div class="input-group">
-                  <label for="customerTranscribePartialsResultStability">Select Amazon Transcribe Partial Results Stability:</label>
-                  <select id="customerTranscribePartialResultsStabilitySelect">
-                    <option style="font-size: 0.9em" value="none">none</option>
-                  </select>
-                  <button id="customerTranscribePartialResultsStabilitySaveButton">Save</button>
-                </div> -->
-                <!-- <div class="button-group">
-                  <button id="customerStartTranscriptionButton" disabled>Start Transcription</button>
-                  <button id="customerStopTranscriptionButton" disabled>Stop Transcription</button>
-                </div> -->
                 <div class="checkbox-group">
-                  <input type="checkbox" id="customerStreamMicCheckbox" name="customerStreamMicCheckbox" checked />
+                  <input type="checkbox" id="customerStreamMicCheckbox" name="customerStreamMicCheckbox" unchecked />
                   <label for="customerStreamMicCheckbox">Stream Customer Mic to Agent</label>
                 </div>
                 <div class="checkbox-group">
-                  <input type="checkbox" id="customerStreamTranslationCheckbox" name="customerStreamTranslationCheckbox" checked />
+                  <input type="checkbox" id="customerStreamTranslationCheckbox" name="customerStreamTranslationCheckbox" unchecked />
                   <label for="customerStreamTranslationCheckbox">Stream Customer Translation to Customer</label>
                 </div>
                 <div class="checkbox-group">
-                  <input type="checkbox" id="customerAudioFeedbackEnabledCheckbox" name="customerAudioFeedbackEnabledCheckbox" checked />
+                  <input type="checkbox" id="customerAudioFeedbackEnabledCheckbox" name="customerAudioFeedbackEnabledCheckbox" unchecked />
                   <label for="customerAudioFeedbackEnabledCheckbox">Enable Customer Audio Feedback</label>
                 </div>
-                <!-- <div class="input-group">
-                  <label for="customerTranslateFromLanguageSelect">Select Amazon Translate From Language:</label>
-                  <select id="customerTranslateFromLanguageSelect">
-                    <option value="">-- Select Language --</option>
-                  </select>
-                  <button id="customerTranslateFromLanguageSaveButton">Save</button>
-                </div>
-                <div class="output-group">
-                  <label for="customerTranscriptionTextOutputDiv">Customer Transcription:</label>
-                  <div id="customerTranscriptionTextOutputDiv" class="output-text"></div>
-                </div> -->
               </div>
               <div class="control-group-translate">
                 <h3>Languages</h3>
                 <div class="input-group">
-                  <label for="customerTranslateFromLanguageSelect">Select Amazon Translate From Language:</label>
+                  <label for="customerTranslateFromLanguageSelect">Select Source Language:</label>
                   <select id="customerTranslateFromLanguageSelect">
                     <option value="">-- Select Language --</option>
                   </select>
                   <button id="customerTranslateFromLanguageSaveButton">Save</button>
                 </div>
                 <div class="input-group">
-                  <label for="customerTranslateToLanguageSelect">Select Amazon Translate To Language:</label>
+                  <label for="customerTranslateToLanguageSelect">Select Target Language:</label>
                   <select id="customerTranslateToLanguageSelect">
                     <option value="">-- Select Language --</option>
                   </select>
                   <button id="customerTranslateToLanguageSaveButton">Save</button>
                 </div>
                 <div class="input-group">
-                  <label for="customerVoiceIdSelect">Select Amazon Polly Voice:</label>
+                  <label for="customerVoiceIdSelect">Select Voice:</label>
                   <select id="customerVoiceIdSelect">
                     <option value="">-- Select Voice --</option>
                   </select>
@@ -188,81 +159,40 @@
                   <label for="customerTranslatedTextOutputDiv">Customer Translation:</label>
                   <div id="customerTranslatedTextOutputDiv" class="output-text"></div>
                 </div>
-                <!-- <div class="input-group">
-                  <label for="customerTranslateFromLanguageSelect">Select Amazon Translate From Language:</label>
-                  <select id="customerTranslateFromLanguageSelect">
-                    <option value="">-- Select Language --</option>
-                  </select>
-                  <button id="customerTranslateFromLanguageSaveButton">Save</button>
-                </div>
-                <div class="output-group">
-                  <label for="customerTranscriptionTextOutputDiv">Customer Transcription:</label>
-                  <div id="customerTranscriptionTextOutputDiv" class="output-text"></div>
-                </div>
-                <div class="input-group">
-                  <label for="customerTranslateToLanguageSelect">Select Amazon Translate To Language:</label>
-                  <select id="customerTranslateToLanguageSelect">
-                    <option value="">-- Select Language --</option>
-                  </select>
-                  <button id="customerTranslateToLanguageSaveButton">Save</button>
-                </div>
-                <div class="output-group">
-                  <label for="customerTranslatedTextOutputDiv">Customer Translation:</label>
-                  <div id="customerTranslatedTextOutputDiv" class="output-text"></div>
-                </div> -->
+
               </div>
-              <!-- <div class="control-group-polly">
-                <h3>Synthesize Customer Voice</h3>
-                <div class="input-group">
-                  <label for="customerPollyLanguageCodeSelect">Select Amazon Polly Language:</label>
-                  <select id="customerPollyLanguageCodeSelect">
-                    <option value="">-- Select Language --</option>
-                  </select>
-                  <button id="customerPollyLanguageCodeSaveButton">Save</button>
-                </div>
-                <div class="input-group">
-                  <label for="customerPollyEngineSelect">Select Amazon Polly Engine:</label>
-                  <select id="customerPollyEngineSelect"></select>
-                  <button id="customerPollyEngineSaveButton">Save</button>
-                </div>
-                <div class="input-group">
-                  <label for="customerPollyVoiceIdSelect">Select Amazon Polly Voice:</label>
-                  <select id="customerPollyVoiceIdSelect">
-                    <option value="">-- Select Voice --</option>
-                  </select>
-                  <button id="customerPollyVoiceIdSaveButton">Save</button>
-                </div>
-              </div> -->
+              <div class="control-group-latency">
+                <h3>Latency</h3>
+                  <div id="agent-latency-transcription" style="margin-top: 8px;">
+                    Transcription: <span class="latency-value">-- ms</span>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="agent-latency-translation" style="margin-top: 8px;">
+                    Translation: <span class="latency-value">-- ms</span>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="agent-latency-audioSynthesis" style="margin-top: 8px;">
+                    Audio Synthesis (target -> synth): <span class="latency-value">-- ms</span>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+              </div>
+
             </div>
 
             <div id="divAgentControls" class="participant-controls">
               <h2>Agent Controls</h2>
               <div class="control-group-transcribe">
                 <h3>Audio</h3>
-                <!-- <div class="input-group">
-                  <label for="agentTranscribeLanguageSelect">Select Amazon Transcribe Language:</label>
-                  <select id="agentTranscribeLanguageSelect">
-                    <option value="">-- Select Language --</option>
-                  </select>
-                  <button id="agentTranscribeLanguageSaveButton">Save</button>
-                </div> -->
-                <!-- <div class="input-group">
-                  <label for="agentTranscribePartialResultsStability">Select Amazon Transcribe Partial Results Stability:</label>
-                  <select id="agentTranscribePartialResultsStabilitySelect">
-                    <option style="font-size: 0.9em" value="none">none</option>
-                  </select>
-                  <button id="agentTranscribePartialResultsStabilitySaveButton">Save</button>
-                </div> -->
                 <div class="checkbox-group">
-                  <input type="checkbox" id="agentStreamTranslationCheckbox" name="StreamTranslationCheckbox" checked />
-                  <label for="agentStreamTranslationCheckbox">Stream Agent Translation to Agent</label>
-                </div>
-                <div class="checkbox-group">
-                  <input type="checkbox" id="agentStreamMicCheckbox" name="agentStreamMicCheckbox" checked />
+                  <input type="checkbox" id="agentStreamMicCheckbox" name="agentStreamMicCheckbox" unchecked />
                   <label for="agentStreamMicCheckbox">Stream Agent Mic to Customer</label>
                 </div>
                 <div class="checkbox-group">
-                  <input type="checkbox" id="agentAudioFeedbackEnabledCheckbox" name="agentAudioFeedbackEnabledCheckbox" checked />
+                  <input type="checkbox" id="agentStreamTranslationCheckbox" name="StreamTranslationCheckbox" unchecked />
+                  <label for="agentStreamTranslationCheckbox">Stream Agent Translation to Agent</label>
+                </div>
+                <div class="checkbox-group">
+                  <input type="checkbox" id="agentAudioFeedbackEnabledCheckbox" name="agentAudioFeedbackEnabledCheckbox" unchecked />
                   <label for="agentAudioFeedbackEnabledCheckbox">Enable Agent Audio Feedback</label>
                 </div>
                 <div class="button-group">
@@ -278,30 +208,26 @@
               <div class="control-group-translate">
                 <h3>Languages</h3>
                 <div class="input-group">
-                  <label for="agentTranslateFromLanguageSelect">Select Amazon Translate From Language:</label>
+                  <label for="agentTranslateFromLanguageSelect">Select Source Language:</label>
                   <select id="agentTranslateFromLanguageSelect">
                     <option value="">-- Select Language --</option>
                   </select>
                   <button id="agentTranslateFromLanguageSaveButton">Save</button>
                 </div>
                 <div class="input-group">
-                  <label for="agentTranslateToLanguageSelect">Select Amazon Translate To Language:</label>
+                  <label for="agentTranslateToLanguageSelect">Select Target Language:</label>
                   <select id="agentTranslateToLanguageSelect">
                     <option value="">-- Select Language --</option>
                   </select>
                   <button id="agentTranslateToLanguageSaveButton">Save</button>
                 </div>
                 <div class="input-group">
-                  <label for="agentVoiceIdSelect">Select Amazon Polly Voice:</label>
+                  <label for="agentVoiceIdSelect">Select Voice:</label>
                   <select id="agentVoiceIdSelect">
                     <option value="">-- Select Voice --</option>
                   </select>
                   <button id="agentVoiceIdSaveButton">Save</button>
                 </div>
-                <!-- <div class="input-group">
-                  <input type="text" id="agentTranslateTextInput" placeholder="Enter text to Translate" />
-                  <button id="agentTranslateTextButton">Translate Text</button>
-                </div> -->
                 <div class="output-group">
                   <label for="agentTranscriptionTextOutputDiv">Agent Transcription:</label>
                   <div id="agentTranscriptionTextOutputDiv" class="output-text"></div>
@@ -311,32 +237,21 @@
                   <div id="agentTranslatedTextOutputDiv" class="output-text"></div>
                 </div>
               </div>
-              <!-- <div class="control-group-polly">
-                <h3>Synthesize Agent Voice</h3>
-                <div class="input-group">
-                  <label for="agentPollyLanguageCodeSelect">Select Amazon Polly Language:</label>
-                  <select id="agentPollyLanguageCodeSelect">
-                    <option value="">-- Select Language --</option>
-                  </select>
-                  <button id="agentPollyLanguageCodeSaveButton">Save</button>
-                </div>
-                <div class="input-group">
-                  <label for="agentPollyEngineSelect">Select Amazon Polly Engine:</label>
-                  <select id="agentPollyEngineSelect"></select>
-                  <button id="agentPollyEngineSaveButton">Save</button>
-                </div>
-                <div class="input-group">
-                  <label for="agentPollyVoiceIdSelect">Select Amazon Polly Voice:</label>
-                  <select id="agentPollyVoiceIdSelect">
-                    <option value="">-- Select Voice --</option>
-                  </select>
-                  <button id="agentPollyVoiceIdSaveButton">Save</button>
-                </div>
-                <div class="input-group">
-                  <input type="text" id="agentPollyTextInput" placeholder="Enter text for Amazon Polly" />
-                  <button id="agentSynthesizeSpeechButton">Synthesize Speech</button>
-                </div>
-              </div> -->
+              <div class="control-group-latency">
+                <h3>Latency</h3>
+                  <div id="customer-latency-transcription" style="margin-top: 8px;">
+                    Transcription: <span class="latency-value">-- ms</span>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="customer-latency-translation" style="margin-top: 8px;">
+                    Translation: <span class="latency-value">-- ms</span>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="customer-latency-audioSynthesis" style="margin-top: 8px;">
+                    Audio Synthesis (target -> synth): <span class="latency-value">-- ms</span>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+              </div>
             </div>
 
             <div id="divTranscription" class="participant-controls">
