@@ -22,6 +22,7 @@ import { CONNECT_CONFIG } from "./config";
 import { AudioContextManager } from "./managers/AudioContextManager";
 import { AudioInputTestManager } from "./managers/InputTestManager";
 import { DeepLVoiceClient } from "./adapters/voiceToVoiceAdapter";
+import { AudioLatencyTrackManager } from "./managers/AudioLatencyTrackManager";
 
 let connect = {};
 let CurrentUser = {};
@@ -56,6 +57,9 @@ let DeepLVoiceClientAgent;
 
 // DeepLVoiceClient to manage the connection and audio streaming with DeepL Voice for Customer
 let DeepLVoiceClientCustomer;
+
+// AudioLatencyTrackManager to manage and calculate latency for different tracks in the app
+let audioLatencyTrackManager;
 
 async function getAudioContext() {
   if (AudioContextMgr == null) {
@@ -142,13 +146,8 @@ const onLoad = async () => {
   CCP_V2V.UI.logoutButton.style.display = "block";
   getDevices();
   setAudioElementsSinkIds();
-  // loadTranscribeLanguageCodes();
-  // loadTranscribePartialResultsStability();
   loadTranslateLanguageCodes();
   loadVoiceIds();
-  // loadPollyEngines();
-  // loadPollyLanguageCodes();
-  // loadCustomerPollyVoiceIds().then(loadAgentPollyVoiceIds);
   initCCP(onConnectInitialized);
 };
 
@@ -431,8 +430,11 @@ function subscribeToContactEvents() {
   });
 }
 
-function onContactConnecting(contact) {
+async function onContactConnecting(contact) {
   console.info(`${LOGGER_PREFIX} - contact is connecting`, contact);
+  const audioLatencyTrackManager = new AudioLatencyTrackManager();
+  await agentStartSession(audioLatencyTrackManager);
+  await customerStartSession(audioLatencyTrackManager);
 }
 
 async function onContactConnected(contact) {
@@ -464,9 +466,6 @@ function onContactEnded(contact) {
 
 async function onContactDestroyed(contact) {
   console.info(`${LOGGER_PREFIX} - contact has been destroyed`, contact);
-  
-  await agentStopStreaming();
-  await customerStopStreaming();
   clearTranscriptCards();
 }
 
@@ -661,55 +660,6 @@ async function getDevices() {
   }
 }
 
-async function loadTranscribeLanguageCodes() {
-  const transcribeStreamingLanguages = listStreamingLanguages();
-  transcribeStreamingLanguages.forEach((language) => {
-    const option = document.createElement("option");
-    option.value = language;
-    option.textContent = language;
-    CCP_V2V.UI.customerTranscribeLanguageSelect.appendChild(option);
-    CCP_V2V.UI.agentTranscribeLanguageSelect.appendChild(option.cloneNode(true));
-  });
-  //set en-US as default
-  CCP_V2V.UI.customerTranscribeLanguageSelect.value = "en-US";
-  CCP_V2V.UI.agentTranscribeLanguageSelect.value = "en-US";
-
-  //pre-select saved transcribeLanguage
-  const savedCustomerTranscribeLanguage = getLocalStorageValueByKey("customerTranscribeLanguage");
-  if (savedCustomerTranscribeLanguage) {
-    CCP_V2V.UI.customerTranscribeLanguageSelect.value = savedCustomerTranscribeLanguage;
-  }
-
-  const savedAgentTranscribeLanguage = getLocalStorageValueByKey("agentTranscribeLanguage");
-  if (savedAgentTranscribeLanguage) {
-    CCP_V2V.UI.agentTranscribeLanguageSelect.value = savedAgentTranscribeLanguage;
-  }
-}
-
-function loadTranscribePartialResultsStability() {
-  TRANSCRIBE_PARTIAL_RESULTS_STABILITY.forEach((stability) => {
-    const option = document.createElement("option");
-    option.value = stability;
-    option.textContent = stability;
-    CCP_V2V.UI.customerTranscribePartialResultsStabilitySelect.appendChild(option);
-    CCP_V2V.UI.agentTranscribePartialResultsStabilitySelect.appendChild(option.cloneNode(true));
-  });
-  //set none as default
-  CCP_V2V.UI.customerTranscribePartialResultsStabilitySelect.value = "none";
-  CCP_V2V.UI.agentTranscribePartialResultsStabilitySelect.value = "none";
-
-  //pre-select saved transcribePartialResultStability
-  const savedCustomerTranscribePartialResultsStability = getLocalStorageValueByKey("customerTranscribePartialResultsStability");
-  if (savedCustomerTranscribePartialResultsStability) {
-    CCP_V2V.UI.customerTranscribePartialResultsStabilitySelect.value = savedCustomerTranscribePartialResultsStability;
-  }
-
-  const savedAgentTranscribePartialResultsStability = getLocalStorageValueByKey("agentTranscribePartialResultsStability");
-  if (savedAgentTranscribePartialResultsStability) {
-    CCP_V2V.UI.agentTranscribePartialResultsStabilitySelect.value = savedAgentTranscribePartialResultsStability;
-  }
-}
-
 //Creates Customer Speaker Stream used as input for Amazon Transcribe when transcribing customer's voice
 async function captureFromCustomerAudioStream() {
   const session = ConnectSoftPhoneManager?.getSession(CurrentAgentConnectionId);
@@ -730,6 +680,53 @@ async function captureFromCustomerAudioStream() {
   return amazonTranscribeFromCustomerAudioStream;
 }
 
+async function customerStartSession(audioLatencyTrackManager) {
+  DeepLVoiceClientCustomer = new DeepLVoiceClient({
+    type: "customer",
+    audioLatencyTrackManager: audioLatencyTrackManager,
+    onTranscription: handleCustomerTranscript,
+    onTranslation: handleCustomerTranslateText,
+    onAudio: handleCustomerSynthesis,
+    onLatencyUpdate: handleCustomerLatencyUpdate,
+  });
+  try {
+    await DeepLVoiceClientCustomer.startSession({
+      sourceLanguage: CCP_V2V.UI.customerTranslateFromLanguageSelect.value,
+      targetLanguages: [CCP_V2V.UI.customerTranslateToLanguageSelect.value],
+      targetMediaLanguages: [CCP_V2V.UI.customerTranslateToLanguageSelect.value],
+      sourceMediaContentType: "audio/pcm;encoding=s16le;rate=48000",
+      targetMediaContentType: "audio/pcm;encoding=s16le;rate=16000",
+      targetMediaVoice: CCP_V2V.UI.customerVoiceIdSelect.value,
+    });
+  } catch (error) {
+    console.error(`${LOGGER_PREFIX} - customerStartSession - Error starting customer session:`, error);
+    raiseError(`Error starting customer session: ${error}`);
+  }
+}
+
+async function agentStartSession(audioLatencyTrackManager) {
+  DeepLVoiceClientAgent = new DeepLVoiceClient({
+    type: "agent",
+    audioLatencyTrackManager: audioLatencyTrackManager,
+    onTranscription: handleAgentTranscript,
+    onTranslation: handleAgentTranslateText,
+    onAudio: handleAgentSynthesis,
+    onLatencyUpdate: handleAgentLatencyUpdate,
+  });
+  try {
+    await DeepLVoiceClientAgent.startSession({
+      sourceLanguage: CCP_V2V.UI.agentTranslateFromLanguageSelect.value,
+      targetLanguages: [CCP_V2V.UI.agentTranslateToLanguageSelect.value],
+      targetMediaLanguages: [CCP_V2V.UI.agentTranslateToLanguageSelect.value],
+      sourceMediaContentType: "audio/pcm;encoding=s16le;rate=48000",
+      targetMediaContentType: "audio/pcm;encoding=s16le;rate=16000",
+    });
+  } catch (error) {
+    console.error(`${LOGGER_PREFIX} - agentStartSession - Error starting agent session:`, error);
+    raiseError(`Error starting agent session: ${error}`);
+  }
+}
+
 async function customerStartStreaming() {
   try {
     if (CCP_V2V.UI.customerStreamMicCheckbox.checked === true) {
@@ -748,22 +745,6 @@ async function customerStartStreaming() {
     //Get ready to stream To Customer
     const toCustomerAudioTrack = ToCustomerAudioStreamManager.getAudioTrack();
     RTCSessionTrackManager.replaceTrack(toCustomerAudioTrack, TrackType.POLLY);
-
-    DeepLVoiceClientCustomer = new DeepLVoiceClient({
-      onTranscription: handleCustomerTranscript,
-      onTranslation: handleCustomerTranslateText,
-      onAudio: handleCustomerSynthesis,
-      onLatencyUpdate: handleCustomerLatencyUpdate,
-    });
-
-    await DeepLVoiceClientCustomer.startSession({
-      sourceLanguage: CCP_V2V.UI.customerTranslateFromLanguageSelect.value,
-      targetLanguages: [CCP_V2V.UI.customerTranslateToLanguageSelect.value],
-      targetMediaLanguages: [CCP_V2V.UI.customerTranslateToLanguageSelect.value],
-      sourceMediaContentType: "audio/pcm;encoding=s16le;rate=48000",
-      targetMediaContentType: "audio/pcm;encoding=s16le;rate=16000",
-      targetMediaVoice: CCP_V2V.UI.customerVoiceIdSelect.value,
-    });
 
     const AmazonTranscribeFromCustomerAudioStream = await captureFromCustomerAudioStream();
     const sampleRate = AudioContextMgr.getActualSampleRate();
@@ -795,6 +776,11 @@ async function customerStopStreaming() {
     DeepLVoiceClientCustomer = null;
   }
 
+  if (audioLatencyTrackManager) {
+    audioLatencyTrackManager.dispose();
+    audioLatencyTrackManager = null;
+  }
+
   //un-mute the audio element
   CCP_V2V.UI.fromCustomerAudioElement.muted = false;
 }
@@ -817,21 +803,6 @@ async function agentStartStreaming() {
       const micVolume = parseFloat(CCP_V2V.UI.agentStreamMicVolume.value);
       ToCustomerAudioStreamManager.setMicrophoneVolume(micVolume);
     }
-
-    DeepLVoiceClientAgent = new DeepLVoiceClient({
-      onTranscription: handleAgentTranscript,
-      onTranslation: handleAgentTranslateText,
-      onAudio: handleAgentSynthesis,
-      onLatencyUpdate: handleAgentLatencyUpdate,
-    });
-  
-    await DeepLVoiceClientAgent.startSession({
-      sourceLanguage: CCP_V2V.UI.agentTranslateFromLanguageSelect.value,
-      targetLanguages: [CCP_V2V.UI.agentTranslateToLanguageSelect.value],
-      targetMediaLanguages: [CCP_V2V.UI.agentTranslateToLanguageSelect.value],
-      sourceMediaContentType: "audio/pcm;encoding=s16le;rate=48000",
-      targetMediaContentType: "audio/pcm;encoding=s16le;rate=16000",
-    });
 
     AmazonTranscribeToCustomerAudioStream = await createMicrophoneStream(micConstraints);
     const agentStreamSampleRate = AudioContextMgr.getActualSampleRate();
@@ -867,6 +838,11 @@ async function agentStopStreaming() {
     DeepLVoiceClientAgent = null;
   }
 
+  if (audioLatencyTrackManager) {
+    audioLatencyTrackManager.dispose();
+    audioLatencyTrackManager = null;
+  }
+
   enableMicrophoneAndSpeakerSelection();
 }
 
@@ -880,7 +856,11 @@ function toggleAgentTranscriptionMute() {
       //Mute the Mic so it is not streamed to Customer
       const selectedMic = CCP_V2V.UI.micSelect.value;
       const micConstraints = getMicrophoneConstraints(selectedMic);
-      IsAgentTranscriptionMuted ? ToCustomerAudioStreamManager.stopMicrophone() : ToCustomerAudioStreamManager.startMicrophone(micConstraints);
+      if (IsAgentTranscriptionMuted || !CCP_V2V.UI.agentStreamMicCheckbox.checked) {
+        ToCustomerAudioStreamManager.stopMicrophone();
+      } else {
+        ToCustomerAudioStreamManager.startMicrophone(micConstraints);
+      }
       CCP_V2V.UI.agentMuteTranscriptionButton.textContent = IsAgentTranscriptionMuted ? "Unmute" : "Mute";
     }
   }
@@ -1003,6 +983,7 @@ async function handleAgentTranscript(text, latency) {
     addTranscriptCard(text, null, "fromAgent", latency);
   }, 100);
 }
+
 async function handleCustomerSynthesis(data) {
   if (!data) return;
   for (let i = 0; i < data.length; i++) {

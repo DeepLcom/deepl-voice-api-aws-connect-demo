@@ -3,6 +3,7 @@ import { getTranscribeAudioStream } from "../utils/transcribeUtils";
 
 class DeepLVoiceClient {
   constructor(options = {}) {
+    this.type = options.type; // "agent" or "customer"
     this.baseUrl = options.baseUrl || "https://api.deepl.com";
     this.getLanguagesProxy = "https://2zvm3hfyunpfl6ot5f6ni3sysu0dwqbz.lambda-url.us-west-1.on.aws/"
     this.requestSessionProxy = options.requestSessionProxy || "https://vgs3633jo7wnecrlizbe2v6aja0lrron.lambda-url.us-west-1.on.aws/";
@@ -11,6 +12,7 @@ class DeepLVoiceClient {
     this.streamingUrl = null;
     this.currentToken = null;
     this.sessionConfig = null;
+    this.shouldReconnect = true;
     this.isConnected = false;
     
     // Event handlers
@@ -35,8 +37,8 @@ class DeepLVoiceClient {
       transcription: [],      // Audio → Transcription
       translation: [],        // Audio → Translation text
       audioSynthesis: [],     // Translation text → Synthesized audio (NEW)
-      endToEnd: []           // Audio → Synthesized audio (total)
     };
+    this.audioLatencyTrackManager = options.audioLatencyTrackManager;
   }
 
   async getLanguages(type = "source") {
@@ -63,8 +65,7 @@ class DeepLVoiceClient {
       }
       throw error;
     }
-  } 
-
+  }
 
   /**
    * Request a new streaming session
@@ -153,16 +154,10 @@ class DeepLVoiceClient {
       const wsUrl = `${streamingUrl}?token=${token}`;
       
       this.ws = new WebSocket(wsUrl);
-        console.log('WebSocket object:', {
-            url: this.ws.url,
-            readyState: this.ws.readyState,
-            protocol: this.ws.protocol,
-            onmessage: typeof this.ws.onmessage,
-            onerror: typeof this.ws.onerror
-        });
       this.ws.onopen = () => {
         console.log('WebSocket connection established');
         this.isConnected = true;
+
         if (this.onConnect) {
           this.onConnect();
         }
@@ -174,33 +169,32 @@ class DeepLVoiceClient {
       };
       
       this.ws.onerror = (error) => {
-        console.error('❌ WebSocket error event fired');
-        console.error('Error object:', error);
-        console.error('ReadyState:', this.ws?.readyState);
-        console.error('WebSocket URL:', this.ws?.url);
-        if (this.onError) {
-          this.onError(error);
-        }
-        reject(error);
+        console.error('❌ WebSocket error:', error);
       };
       
       this.ws.onclose = (event) => {
-        console.log('🔴 WebSocket closed');
-        console.log('Close code:', event.code);
-        console.log('Close reason:', event.reason);
+        console.log('🔴 WebSocket closed: ', event.reason);
         this.isConnected = false;
+
         if (this.onDisconnect) {
           this.onDisconnect(event);
         }
-      setTimeout(() => {
-        if (this.ws.readyState === 0) {
-          console.error('⏱️ WebSocket connection timeout');
-          this.ws.close();
-          reject(new Error('WebSocket connection timeout'));
-        }
-      }, 10000); // 10 seconds
       };
     });
+  }
+  
+  disconnect() {
+    if (this.connecting) {
+      return;
+    }
+    console.log('Disconnecting...');
+    this.isConnected = false;
+    this.shouldReconnect = false;
+    if (this.ws) {
+      // Set flag to prevent auto-reconnect
+      this.ws.close();
+      this.ws = null;
+    }
   }
 
   handleMessage(data) {
@@ -212,11 +206,9 @@ class DeepLVoiceClient {
       if (message.source_transcript_update) {
         const update = message.source_transcript_update;
         if (update.concluded && update.concluded.length > 0) {
-            // Use END_TIME of the last concluded segment
             const lastSegment = update.concluded[update.concluded.length - 1];
             const audioEndTime = lastSegment.end_time;
                       
-            // Find the chunk that contains this audio time
             const chunk = this.findChunkByAudioTime(audioEndTime);
             let latency = null;
             
@@ -225,12 +217,8 @@ class DeepLVoiceClient {
                 
                 this.latencyMetrics.transcription.push(latency);
                 this.emitLatencyUpdate('transcription', latency);
-                
-                console.log(`📊 Transcription latency: ${Math.round(latency)}ms`);
-                console.log(`   Audio position: ${chunk.audioStartMs.toFixed(0)}-${chunk.audioEndMs.toFixed(0)}ms`);
-                console.log(`   Responded to audio at: ${audioEndTime}ms`);
-            } else {
             }
+
             if (this.onTranscription) {
                 const sourceTranscriptUpdate = message.source_transcript_update;
                 const concludedText = sourceTranscriptUpdate.concluded
@@ -284,6 +272,7 @@ class DeepLVoiceClient {
             const synthesisLatency = receiveTime - latestTargetTranscript.receivedAt;
             this.latencyMetrics.audioSynthesis.push(synthesisLatency);
             this.emitLatencyUpdate('audioSynthesis', synthesisLatency);
+            this.audioLatencyTrackManager.handleSynthesis(this.type);
             console.log(`📊 Audio synthesis latency: ${Math.round(synthesisLatency)}ms`);
           }
           if (this.onAudio) {
@@ -312,6 +301,11 @@ class DeepLVoiceClient {
       else if (message.error) { 
         if (this.onError) {
           this.onError(new Error(message.error));
+          // close and restart the session
+          this.disconnect();
+          this.startSession(this.sessionConfig).catch(error => {
+              console.error('Failed to restart session after error:', error);
+          });
         }
       }
       else {
@@ -338,7 +332,7 @@ class DeepLVoiceClient {
       });
     }
   }
-  
+
   getLatencyStats(type) {
     const metrics = this.latencyMetrics[type] || [];
     if (metrics.length === 0) {
@@ -360,8 +354,7 @@ class DeepLVoiceClient {
     this.latencyMetrics = {
       transcription: [],
       translation: [],
-      audioSynthesis: [],
-      endToEnd: []
+      audioSynthesis: []
     };
     this.audioChunks = [];
     this.cumulativeAudioTime = 0;
@@ -404,54 +397,61 @@ class DeepLVoiceClient {
             while (buffer.length >= chunkSize) {
                 const chunkToSend = buffer.slice(0, chunkSize);
                 buffer = buffer.slice(chunkSize);
+                this.audioLatencyTrackManager.handleAudio(this.type, chunkToSend);
                 this.sendAudio(chunkToSend);
             }
         }  
     } catch (error) {
         console.error('Error streaming audio:', error);
         throw error;
+    } finally {
+        console.log('streamAudio ended');
     }
   }
 
-    sendAudio(audioBuffer) {
-        if (!this.isConnected) {
-            console.warn('websocket is not connected - cannot send audio chunk.');
-            return;
-        }
-        const sendTime = performance.now();
-        
-        // Calculate actual audio duration of this chunk
-        const numSamples = audioBuffer.length / this.bytesPerSample;
-        const durationMs = (numSamples / this.sampleRate) * 1000;
-        
-        // Track this chunk with precise audio timing
-        const chunk = {
-            sentAt: sendTime,
-            audioStartMs: this.cumulativeAudioTime,
-            audioEndMs: this.cumulativeAudioTime + durationMs
-        };
-        
-        this.audioChunks.push(chunk);
-        this.cumulativeAudioTime += durationMs;
-        
-        // Keep only last 100 chunks to prevent memory growth
-        if (this.audioChunks.length > 100) {
-        const removed = this.audioChunks.shift();
-        // Adjust cumulative time if needed (though not strictly necessary)
-        }
-        
-        try {
-            const base64Audio = audioBuffer.toString('base64');
-            const payload = JSON.stringify({
-                source_media_chunk: {
-                    data: base64Audio
-                }
-            });
-            this.ws.send(payload);
-        } catch (error) {
-            console.error('Error sending audio chunk:', error);
-        }
+  sendAudio(audioBuffer) {
+    if (!this.isConnected) {
+      if (this.shouldReconnect) {
+        console.warn('WebSocket not connected, attempting to start new session...');
+        this.startSession(this.sessionConfig).catch(error => {
+            console.error('Failed to start new session during sendAudio:', error);
+        });
+      }
+      return;
     }
+    const sendTime = performance.now();
+    
+    // Calculate actual audio duration of this chunk
+    const numSamples = audioBuffer.length / this.bytesPerSample;
+    const durationMs = (numSamples / this.sampleRate) * 1000;
+    
+    // Track this chunk with precise audio timing
+    const chunk = {
+        sentAt: sendTime,
+        audioStartMs: this.cumulativeAudioTime,
+        audioEndMs: this.cumulativeAudioTime + durationMs
+    };
+    
+    this.audioChunks.push(chunk);
+    this.cumulativeAudioTime += durationMs;
+    
+    // Keep only last 100 chunks to prevent memory growth
+    if (this.audioChunks.length > 100) {
+      const removed = this.audioChunks.shift();
+    }
+    
+    try {
+        const base64Audio = audioBuffer.toString('base64');
+        const payload = JSON.stringify({
+            source_media_chunk: {
+                data: base64Audio
+            }
+        });
+        this.ws.send(payload);
+    } catch (error) {
+        console.error('Error sending audio chunk:', error);
+    }
+  }
 
   // Signal end of audio stream
   endAudio() {
@@ -465,24 +465,16 @@ class DeepLVoiceClient {
   }
 
   /**
-   * Close the WebSocket connection
-   */
-  disconnect() {
-    console.log('Disconnecting from WebSocket');
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-      this.isConnected = false;
-    }
-  }
-
-  /**
    * Start a complete session: request + connect
    * 
    * @param {Object} config - Session configuration (same as requestSession)
    * @returns {Promise<void>}
    */
   async startSession(config) {
+    if (this.connecting) {
+      return;
+    }
+    this.connecting = true;
     console.log('Starting session with config:', config);
     const session = await this.requestSession(config);
     if (session && session.streaming_url && session.token) {
@@ -490,6 +482,7 @@ class DeepLVoiceClient {
     } else {
       throw new Error('Invalid session response: missing streaming_url or token');
     }
+    this.connecting = false;
   }
 
   /**
