@@ -1,0 +1,105 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  AWS_DEFAULT_REGION: eu-west-2
+  AWS_REGION_EU: eu-west-2
+  AWS_REGION_US: us-west-1
+
+cache:
+  paths:
+    - cdk-stacks/node_modules/
+    - webapp/node_modules/
+
+build-webapp:
+  stage: build
+  image: node:20
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - when: manual
+  script:
+    - echo "Building webapp..."
+    - cd cdk-stacks
+    - npm ci
+    - cd ../webapp
+    - npm ci
+    - cd ../cdk-stacks
+    - npm run build:webapp
+  artifacts:
+    paths:
+      - webapp/dist/
+    expire_in: 1 hour
+
+.deploy-base:
+  stage: deploy
+  image: node:20
+  dependencies:
+    - build-webapp
+  before_script:
+    - echo "Installing AWS CLI..."
+    - curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    - unzip -q awscliv2.zip
+    - ./aws/install --bin-dir $HOME/.local/bin --install-dir $HOME/.local/aws-cli
+    - export PATH=$HOME/.local/bin:$PATH
+    - aws --version
+    - |
+      if [ -z "$DEPLOY_AWS_ACCESS_KEY_ID" ] || [ -z "$DEPLOY_AWS_SECRET_ACCESS_KEY" ]; then
+        echo "ERROR: AWS credentials not set for this deployment!"
+        echo "DEPLOY_AWS_ACCESS_KEY_ID and DEPLOY_AWS_SECRET_ACCESS_KEY must be set"
+        exit 1
+      fi
+    - export AWS_ACCESS_KEY_ID=$DEPLOY_AWS_ACCESS_KEY_ID
+    - export AWS_SECRET_ACCESS_KEY=$DEPLOY_AWS_SECRET_ACCESS_KEY
+    - export AWS_DEFAULT_REGION=$DEPLOY_REGION
+    - export CDK_DEFAULT_REGION=$DEPLOY_REGION
+    - export CDK_DEFAULT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+    - echo "Deploying to account $CDK_DEFAULT_ACCOUNT in region $CDK_DEFAULT_REGION"
+    - cd cdk-stacks
+    - npm ci
+  script:
+    - echo "Deploying to $DEPLOY_REGION..."
+    - npx cdk deploy --all --require-approval never
+    - echo "Deployment complete!"
+
+deploy-to-eu-auto:
+  extends: .deploy-base
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: on_success
+  variables:
+    DEPLOY_AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID_EU
+    DEPLOY_AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY_EU
+    DEPLOY_REGION: $AWS_REGION_EU
+  environment:
+    name: production-eu
+    url: https://d3nhkx7cz6sml.cloudfront.net
+
+deploy-to-eu-manual:
+  extends: .deploy-base
+  when: manual
+  variables:
+    DEPLOY_AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID_EU
+    DEPLOY_AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY_EU
+    DEPLOY_REGION: $AWS_REGION_EU
+  environment:
+    name: production-eu
+    url: https://d3nhkx7cz6sml.cloudfront.net
+
+deploy-to-us-manual:
+  extends: .deploy-base
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+  variables:
+    DEPLOY_AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID_US
+    DEPLOY_AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY_US
+    DEPLOY_REGION: $AWS_REGION_US
+  environment:
+    name: production-us
+    url: https://d214xkld0mw6ub.cloudfront.net/
+
+
