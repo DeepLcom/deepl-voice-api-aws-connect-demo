@@ -3,6 +3,7 @@ import { getTranscribeAudioStream } from "../utils/transcribeUtils";
 
 class DeepLVoiceClient {
   constructor(options = {}) {
+    this.type = options.type; // "agent" or "customer"
     this.baseUrl = options.baseUrl || "https://api.deepl.com";
     this.getLanguagesProxy = "https://2zvm3hfyunpfl6ot5f6ni3sysu0dwqbz.lambda-url.us-west-1.on.aws/"
     this.requestSessionProxy = options.requestSessionProxy || "https://vgs3633jo7wnecrlizbe2v6aja0lrron.lambda-url.us-west-1.on.aws/";
@@ -36,8 +37,8 @@ class DeepLVoiceClient {
       transcription: [],      // Audio → Transcription
       translation: [],        // Audio → Translation text
       audioSynthesis: [],     // Translation text → Synthesized audio (NEW)
-      endToEnd: []           // Audio → Synthesized audio (total)
     };
+    this.audioLatencyTrackManager = options.audioLatencyTrackManager;
   }
 
   async getLanguages(type = "source") {
@@ -205,11 +206,9 @@ class DeepLVoiceClient {
       if (message.source_transcript_update) {
         const update = message.source_transcript_update;
         if (update.concluded && update.concluded.length > 0) {
-            // Use END_TIME of the last concluded segment
             const lastSegment = update.concluded[update.concluded.length - 1];
             const audioEndTime = lastSegment.end_time;
                       
-            // Find the chunk that contains this audio time
             const chunk = this.findChunkByAudioTime(audioEndTime);
             let latency = null;
             
@@ -218,12 +217,8 @@ class DeepLVoiceClient {
                 
                 this.latencyMetrics.transcription.push(latency);
                 this.emitLatencyUpdate('transcription', latency);
-                
-                console.log(`📊 Transcription latency: ${Math.round(latency)}ms`);
-                console.log(`   Audio position: ${chunk.audioStartMs.toFixed(0)}-${chunk.audioEndMs.toFixed(0)}ms`);
-                console.log(`   Responded to audio at: ${audioEndTime}ms`);
-            } else {
             }
+
             if (this.onTranscription) {
                 const sourceTranscriptUpdate = message.source_transcript_update;
                 const concludedText = sourceTranscriptUpdate.concluded
@@ -277,6 +272,7 @@ class DeepLVoiceClient {
             const synthesisLatency = receiveTime - latestTargetTranscript.receivedAt;
             this.latencyMetrics.audioSynthesis.push(synthesisLatency);
             this.emitLatencyUpdate('audioSynthesis', synthesisLatency);
+            this.audioLatencyTrackManager.handleSynthesis(this.type);
             console.log(`📊 Audio synthesis latency: ${Math.round(synthesisLatency)}ms`);
           }
           if (this.onAudio) {
@@ -358,8 +354,7 @@ class DeepLVoiceClient {
     this.latencyMetrics = {
       transcription: [],
       translation: [],
-      audioSynthesis: [],
-      endToEnd: []
+      audioSynthesis: []
     };
     this.audioChunks = [];
     this.cumulativeAudioTime = 0;
@@ -402,6 +397,7 @@ class DeepLVoiceClient {
             while (buffer.length >= chunkSize) {
                 const chunkToSend = buffer.slice(0, chunkSize);
                 buffer = buffer.slice(chunkSize);
+                this.audioLatencyTrackManager.handleAudio(this.type, chunkToSend);
                 this.sendAudio(chunkToSend);
             }
         }  
