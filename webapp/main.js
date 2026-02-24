@@ -23,6 +23,7 @@ import { AudioContextManager } from "./managers/AudioContextManager";
 import { AudioInputTestManager } from "./managers/InputTestManager";
 import { DeepLVoiceClient } from "./adapters/voiceToVoiceAdapter";
 import { AudioLatencyTrackManager } from "./managers/AudioLatencyTrackManager";
+import { SearchableSelect } from "./components/SearchableSelect.js";
 
 let connect = {};
 let CurrentUser = {};
@@ -60,6 +61,12 @@ let DeepLVoiceClientCustomer;
 
 // AudioLatencyTrackManager to manage and calculate latency for different tracks in the app
 let audioLatencyTrackManager;
+
+// SearchableSelect instances for language selection
+let customerTranslateFromLanguageSearchable;
+let customerTranslateToLanguageSearchable;
+let agentTranslateFromLanguageSearchable;
+let agentTranslateToLanguageSearchable;
 
 async function getAudioContext() {
   if (AudioContextMgr == null) {
@@ -332,9 +339,6 @@ const initEventListeners = () => {
   //Translate Agent UI buttons
   CCP_V2V.UI.agentTranslateFromLanguageSaveButton.addEventListener("click", () => {
     addUpdateLocalStorageKey("agentTranslateFromLanguage", CCP_V2V.UI.agentTranslateFromLanguageSelect.value);
-  });
-  CCP_V2V.UI.agentTranslateToLanguageSaveButton.addEventListener("click", () => {
-    addUpdateLocalStorageKey("agentTranslateToLanguage", CCP_V2V.UI.agentTranslateToLanguageSelect.value);
   });
   CCP_V2V.UI.agentTranslateToLanguageSaveButton.addEventListener("click", () => {
     addUpdateLocalStorageKey("agentTranslateToLanguage", CCP_V2V.UI.agentTranslateToLanguageSelect.value);
@@ -925,6 +929,32 @@ async function loadTranslateLanguageCodes() {
   if (savedAgentTranslateToLanguage) {
     CCP_V2V.UI.agentTranslateToLanguageSelect.value = savedAgentTranslateToLanguage;
   }
+
+  // Initialize SearchableSelect for all language dropdowns
+  customerTranslateFromLanguageSearchable = new SearchableSelect(CCP_V2V.UI.customerTranslateFromLanguageSelect);
+  customerTranslateToLanguageSearchable = new SearchableSelect(CCP_V2V.UI.customerTranslateToLanguageSelect);
+  agentTranslateFromLanguageSearchable = new SearchableSelect(CCP_V2V.UI.agentTranslateFromLanguageSelect);
+  agentTranslateToLanguageSearchable = new SearchableSelect(CCP_V2V.UI.agentTranslateToLanguageSelect);
+
+  // Explicitly set the saved values to ensure they display correctly
+  if (savedCustomerTranslateFromLanguage) {
+    customerTranslateFromLanguageSearchable.setValue(savedCustomerTranslateFromLanguage);
+  }
+  if (savedCustomerTranslateToLanguage) {
+    customerTranslateToLanguageSearchable.setValue(savedCustomerTranslateToLanguage);
+  }
+  if (savedAgentTranslateFromLanguage) {
+    agentTranslateFromLanguageSearchable.setValue(savedAgentTranslateFromLanguage);
+  }
+  if (savedAgentTranslateToLanguage) {
+    agentTranslateToLanguageSearchable.setValue(savedAgentTranslateToLanguage);
+  }
+
+  // Hide the Save buttons since we now auto-save on selection
+  CCP_V2V.UI.customerTranslateFromLanguageSaveButton.style.display = 'none';
+  CCP_V2V.UI.customerTranslateToLanguageSaveButton.style.display = 'none';
+  CCP_V2V.UI.agentTranslateFromLanguageSaveButton.style.display = 'none';
+  CCP_V2V.UI.agentTranslateToLanguageSaveButton.style.display = 'none';
 }
 
 async function handleCustomerTranscript(text, latency) {

@@ -410,3 +410,112 @@ button:disabled {
 .latency-ok { color: #e2d302ee !important; }
 
 .latency-bad { color: #ac3232 !important; }
+
+/* Searchable Select Styles */
+.searchable-select {
+  position: relative;
+  display: inline-block;
+  width: 62%;
+  margin-bottom: 3px;
+  margin-right: 5px;
+  font-size: 1em;
+}
+
+.searchable-select-selected {
+  padding: 2px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: white;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1em;
+  min-height: 24px;
+}
+
+.searchable-select-selected:hover {
+  border-color: #3498db;
+}
+
+.searchable-select.open .searchable-select-selected {
+  border-color: #3498db;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.searchable-select-arrow {
+  margin-left: 8px;
+  font-size: 0.7em;
+  color: #666;
+  transition: transform 0.2s;
+}
+
+.searchable-select.open .searchable-select-arrow {
+  transform: rotate(180deg);
+}
+
+.searchable-select-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  display: none;
+  background-color: white;
+  border: 1px solid #3498db;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  max-height: 300px;
+  overflow: hidden;
+}
+
+.searchable-select-search {
+  width: 100%;
+  padding: 8px 2px;
+  border: none;
+  border-bottom: 1px solid #ddd;
+  outline: none;
+  font-size: 0.85em;
+  box-sizing: border-box;
+  margin: 0;
+}
+
+.searchable-select-search:focus {
+  border-bottom-color: #3498db;
+}
+
+.searchable-select-options {
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.searchable-select-option {
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background-color 0.1s;
+}
+
+.searchable-select-option:hover {
+  background-color: #f0f8ff;
+}
+
+.searchable-select-option.selected {
+  background-color: #3498db;
+  color: white;
+  font-weight: bold;
+}
+
+.searchable-select-no-results {
+  padding: 8px;
+  color: #999;
+  font-style: italic;
+  cursor: default;
+}
+
+.searchable-select-no-results:hover {
+  background-color: transparent;
+}
