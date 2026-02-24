@@ -1,6 +1,11 @@
 // Copyright 2025 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
-import { LOGGER_PREFIX } from "../constants";
+import {
+  LOGGER_PREFIX,
+  PLAYBACK_RATE_FACTOR,
+  MAX_PLAYBACK_RATE,
+  PLAYBACK_RATE_TARGET
+} from "../constants";
 import { isStringUndefinedNullEmpty } from "../utils/commonUtility";
 
 export class AudioStreamManager {
@@ -27,6 +32,9 @@ export class AudioStreamManager {
     this.isMicrophoneActive = false;
     this.activeMicrophoneDeviceId;
 
+    this.customFeedbackBuffer = null;
+
+    this._playbackChain = Promise.resolve();
     this.customFeedbackBuffer = null;
   }
 
@@ -231,81 +239,63 @@ export class AudioStreamManager {
     });
   }
 
-  // async playAudioBuffer(audioDataArray, volume = 1.0) {
-  //   return new Promise(async (resolve, reject) => {
-  //     try {
-  //       const audioBuffer = await this.audioContext.decodeAudioData(audioDataArray.buffer);
+  playAudioBuffer(arrayBuffer, volume = 1.0) {
+    this._playbackChain = this._playbackChain.then(() =>
+      this._processChunk(arrayBuffer, volume)
+    )
+  }
 
-  //       // Add to queue
-  //       this.audioQueue.push({
-  //         buffer: audioBuffer,
-  //         volume: volume,
-  //         resolve: resolve,
-  //       });
+  async _processChunk(arrayBuffer, volume = 1.0) {
+      try {
+          clearTimeout(this.resetTimer);
+          this.stopAudioFeedback();
 
-  //       // Start processing queue if not already playing
-  //       if (!this.isPlaying) {
-  //         this.processQueue();
-  //       }
-  //     } catch (error) {
-  //       reject(error);
-  //     }
-  //   });
-  // }
+          const pcmData = new Int16Array(arrayBuffer.buffer, arrayBuffer.byteOffset, arrayBuffer.byteLength / 2);
+          const floatData = new Float32Array(pcmData.length);
+          for (let i = 0; i < pcmData.length; i++) {
+              floatData[i] = pcmData[i] / 32768.0;
+          }
 
-async playAudioBuffer(arrayBuffer, volume = 1.0) {
-    return new Promise(async (resolve, reject) => {
-        try {
-            // // Handle base64 string
-            // let base64Audio = audioData;
-            // if (Array.isArray(audioData)) {
-            //     base64Audio = audioData[0];
-            // }
-            
-            // // Convert base64 to ArrayBuffer
-            // const binaryString = atob(base64Audio);
-            // const len = binaryString.length;
-            // const bytes = new Uint8Array(len);
-            // for (let i = 0; i < len; i++) {
-            //     bytes[i] = binaryString.charCodeAt(i);
-            // }
-            
-            // Convert PCM s16le to Float32Array for Web Audio API
-            const pcmData = new Int16Array(arrayBuffer.buffer);
-            const floatData = new Float32Array(pcmData.length);
-            
-            // Convert from int16 (-32768 to 32767) to float32 (-1.0 to 1.0)
-            for (let i = 0; i < pcmData.length; i++) {
-                floatData[i] = pcmData[i] / 32768.0;
-            }
-            
-            // Create AudioBuffer manually
-            // Assuming 48000 Hz mono from DeepL
-            const audioBuffer = this.audioContext.createBuffer(
-                1,                    // 1 channel (mono)
-                floatData.length,     // number of frames
-                16000                 // sample rate
-            );
-            
-            // Copy the data into the buffer
-            audioBuffer.getChannelData(0).set(floatData);
+          const audioBuffer = this.audioContext.createBuffer(1, floatData.length, 16000);
+          audioBuffer.getChannelData(0).set(floatData);
 
-            // Add to queue
-            this.audioQueue.push({
-                buffer: audioBuffer,
-                volume: volume,
-                resolve: resolve,
-            });
+          const source = this.audioContext.createBufferSource();
+          const gainNode = this.audioContext.createGain();
+          gainNode.gain.value = volume;
+          source.buffer = audioBuffer;
+          source.connect(gainNode);
+          gainNode.connect(this.mediaStreamDestination);
 
-            // Start processing queue if not already playing
-            if (!this.isPlaying) {
-                this.processQueue();
-            }
-        } catch (error) {
-            console.error('Error playing audio buffer:', error);
-            reject(error);
-        }
-    });
+          const now = this.audioContext.currentTime;
+          const aheadBy = (this.nextStartTime || now) - now;  // how far ahead scheduler is
+
+          // Adjust playback rate based on how far ahead we are
+          const rate = this._calculatePlaybackRate(aheadBy);
+          source.playbackRate.value = rate;
+
+          const startAt = Math.max(this.nextStartTime || now, now);
+          source.start(startAt);
+
+          this.nextStartTime = startAt + (audioBuffer.duration / rate);
+
+          // When utterance gap detected, resume audio feedback if enabled
+          this.resetTimer = setTimeout(() => {
+              this.nextStartTime = 0;
+              if (this.shouldPlayAudioFeedback) this.startAudioFeedback();
+          }, Math.max(500, aheadBy * 1000));
+      } catch (error) {
+          console.error('Error playing audio buffer:', error);
+      }
+  }
+
+  _calculatePlaybackRate(aheadBySeconds) {
+      if (aheadBySeconds <= PLAYBACK_RATE_TARGET) return 1.0;
+
+      // For every 0.1s ahead of PLAYBACK_RATE_TARGET, multiply rate by PLAYBACK_RATE_FACTOR
+      const unitsAhead = (aheadBySeconds - PLAYBACK_RATE_TARGET) / 0.1;
+      const rate = Math.pow(PLAYBACK_RATE_FACTOR, unitsAhead);
+
+      return Math.min(rate, MAX_PLAYBACK_RATE);
   }
 
   async processQueue() {
