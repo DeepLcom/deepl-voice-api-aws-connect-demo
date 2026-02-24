@@ -58,7 +58,7 @@ class DeepLVoiceClient {
       }
 
       const data = await response.json();
-      return data;
+      return data.languages ?? data;;
     } catch (error) {
       if (this.onError) {
         this.onError(error);
@@ -82,7 +82,7 @@ class DeepLVoiceClient {
    * @param {boolean} [config.enableTranscription=true] - Enable source transcription
    * @returns {Promise<Object>} Session details with streaming_url and token
    */
-  async  requestSession(config) {
+  async requestSession(config) {
     if (!config.targetLanguages || config.targetLanguages.length === 0) {
       throw new Error('At least one target language is required');
     }
@@ -133,7 +133,7 @@ class DeepLVoiceClient {
       this.streamingUrl = data.streaming_url;
       this.currentToken = data.token;
       
-      return data;
+      return data
     } catch (error) {
       if (this.onError) {
         this.onError(error);

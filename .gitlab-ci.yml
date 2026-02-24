@@ -65,22 +65,11 @@ build-webapp:
     - npx cdk deploy --all --require-approval never
     - echo "Deployment complete!"
 
-deploy-to-eu-auto:
+deploy-to-eu-manual:
   extends: .deploy-base
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
-      when: on_success
-  variables:
-    DEPLOY_AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID_EU
-    DEPLOY_AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY_EU
-    DEPLOY_REGION: $AWS_REGION_EU
-  environment:
-    name: production-eu
-    url: https://d3nhkx7cz6sml.cloudfront.net
-
-deploy-to-eu-manual:
-  extends: .deploy-base
-  when: manual
+      when: manual
   variables:
     DEPLOY_AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID_EU
     DEPLOY_AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY_EU
