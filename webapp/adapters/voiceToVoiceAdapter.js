@@ -58,7 +58,7 @@ class DeepLVoiceClient {
       }
 
       const data = await response.json();
-      return data.languages ?? data;;
+      return data;
     } catch (error) {
       if (this.onError) {
         this.onError(error);
