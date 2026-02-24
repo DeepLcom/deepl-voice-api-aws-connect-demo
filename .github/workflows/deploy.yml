@@ -9,6 +9,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   AWS_DEFAULT_REGION: eu-west-2
   AWS_REGION_EU: eu-west-2
