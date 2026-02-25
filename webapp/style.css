@@ -411,6 +411,26 @@ button:disabled {
 
 .latency-bad { color: #ac3232 !important; }
 
+.vad-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vad-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #444;
+  transition: background 0.1s ease;
+  flex-shrink: 0;
+}
+
+.vad-indicator.speaking {
+  background: #e53e3e;
+  box-shadow: 0 0 6px #e53e3e;
+}
+
 /* Searchable Select Styles */
 .searchable-select {
   position: relative;
