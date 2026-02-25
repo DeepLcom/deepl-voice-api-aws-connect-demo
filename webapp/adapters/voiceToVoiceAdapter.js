@@ -1,9 +1,14 @@
 import { getTranscribeAudioStream } from "../utils/transcribeUtils";
+<<<<<<< HEAD
 import {
   LATENCY_TRACKING_ENABLED,
   PIPELINE_LATENCY_MAX_MS_GOOD,
   PIPELINE_LATENCY_MAX_MS_OK
 } from "../constants";
+=======
+import { SUPPORTED_SOURCE_LANGUAGES, SUPPORTED_TARGET_LANGUAGES } from "../supportedLanguages.js";
+
+>>>>>>> e8e8b84 (feat: simplify lang select.)
 
 class DeepLVoiceClient {
   constructor(options = {}) {
@@ -45,29 +50,33 @@ class DeepLVoiceClient {
   }
 
   async getLanguages(type = "source") {
-    try {
-      const response = await fetch(this.getLanguagesProxy, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({ type }),
-      });
+    // Return hard-coded supported languages from config
+    return type === "source" ? SUPPORTED_SOURCE_LANGUAGES : SUPPORTED_TARGET_LANGUAGES;
 
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(`Get languages failed: ${response.status} - ${error.message || response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      if (this.onError) {
-        this.onError(error);
-      }
-      throw error;
-    }
+    // Lambda proxy code (commented out - uncomment to fetch from API)
+    // try {
+    //   const response = await fetch(this.getLanguagesProxy, {
+    //     method: 'POST',
+    //     headers: {
+    //       'Content-Type': 'application/json',
+    //       'Accept': 'application/json',
+    //     },
+    //     body: JSON.stringify({ type }),
+    //   });
+    //
+    //   if (!response.ok) {
+    //     const error = await response.json().catch(() => ({}));
+    //     throw new Error(`Get languages failed: ${response.status} - ${error.message || response.statusText}`);
+    //   }
+    //
+    //   const data = await response.json();
+    //   return data;
+    // } catch (error) {
+    //   if (this.onError) {
+    //     this.onError(error);
+    //   }
+    //   throw error;
+    // }
   }
 
   /**

@@ -529,6 +529,16 @@ button:disabled {
   font-weight: bold;
 }
 
+.searchable-select-option.highlighted {
+  background-color: #e8f4ff;
+  border-left: 3px solid #3498db;
+}
+
+.searchable-select-option.highlighted.selected {
+  background-color: #2980b9;
+  border-left: 3px solid #1a5c8a;
+}
+
 .searchable-select-no-results {
   padding: 8px;
   color: #999;
