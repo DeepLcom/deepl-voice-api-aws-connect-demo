@@ -736,6 +736,8 @@ async function customerStartSession(audioLatencyTrackManager) {
       targetMediaContentType: "audio/pcm;encoding=s16le;rate=16000",
       targetMediaVoice: CCP_V2V.UI.customerVoiceIdSelect.value,
     });
+    // Disable language selection during active session
+    if (customerLanguageSearchable) customerLanguageSearchable.disable();
   } catch (error) {
     console.error(`${LOGGER_PREFIX} - customerStartSession - Error starting customer session:`, error);
     raiseError(`Error starting customer session: ${error}`);
@@ -758,6 +760,8 @@ async function agentStartSession(audioLatencyTrackManager) {
       sourceMediaContentType: "audio/pcm;encoding=s16le;rate=48000",
       targetMediaContentType: "audio/pcm;encoding=s16le;rate=16000",
     });
+    // Disable language selection during active session
+    if (agentLanguageSearchable) agentLanguageSearchable.disable();
   } catch (error) {
     console.error(`${LOGGER_PREFIX} - agentStartSession - Error starting agent session:`, error);
     raiseError(`Error starting agent session: ${error}`);
@@ -820,6 +824,9 @@ async function customerStopStreaming() {
 
   //un-mute the audio element
   CCP_V2V.UI.fromCustomerAudioElement.muted = false;
+
+  // Re-enable language selection after session ends
+  if (customerLanguageSearchable) customerLanguageSearchable.enable();
 }
 
 async function agentStartStreaming() {
@@ -881,6 +888,9 @@ async function agentStopStreaming() {
   }
 
   enableMicrophoneAndSpeakerSelection();
+
+  // Re-enable language selection after session ends
+  if (agentLanguageSearchable) agentLanguageSearchable.enable();
 }
 
 async function toggleAgentTranscriptionMute() {

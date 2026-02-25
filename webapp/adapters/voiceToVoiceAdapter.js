@@ -1,14 +1,6 @@
 import { getTranscribeAudioStream } from "../utils/transcribeUtils";
-<<<<<<< HEAD
-import {
-  LATENCY_TRACKING_ENABLED,
-  PIPELINE_LATENCY_MAX_MS_GOOD,
-  PIPELINE_LATENCY_MAX_MS_OK
-} from "../constants";
-=======
 import { SUPPORTED_SOURCE_LANGUAGES, SUPPORTED_TARGET_LANGUAGES } from "../supportedLanguages.js";
 
->>>>>>> e8e8b84 (feat: simplify lang select.)
 
 class DeepLVoiceClient {
   constructor(options = {}) {

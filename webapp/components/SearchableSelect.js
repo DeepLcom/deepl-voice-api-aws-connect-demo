@@ -305,6 +305,22 @@ export class SearchableSelect {
     return this.selectedValue;
   }
 
+  disable() {
+    this.originalSelect.disabled = true;
+    this.container.classList.add('disabled');
+    this.selectedDisplay.style.opacity = '0.5';
+    this.selectedDisplay.style.cursor = 'not-allowed';
+    this.selectedDisplay.style.pointerEvents = 'none';
+  }
+
+  enable() {
+    this.originalSelect.disabled = false;
+    this.container.classList.remove('disabled');
+    this.selectedDisplay.style.opacity = '1';
+    this.selectedDisplay.style.cursor = 'pointer';
+    this.selectedDisplay.style.pointerEvents = 'auto';
+  }
+
   destroy() {
     this.container.remove();
     this.originalSelect.style.display = '';
