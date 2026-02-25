@@ -11,7 +11,7 @@ import {
   AUDIO_FEEDBACK_FILE_PATH,
   CUSTOMER_TRANSLATION_TO_CUSTOMER_VOLUME,
   LOGGER_PREFIX,
-  TRANSCRIBE_PARTIAL_RESULTS_STABILITY,
+  LATENCY_TRACKING_ENABLED,
 } from "./constants";
 import { getLoginUrl, getValidTokens, handleRedirect, isAuthenticated, logout, setRedirectURI, startTokenRefreshTimer } from "./utils/authUtility";
 import { AudioStreamManager } from "./managers/AudioStreamManager";
@@ -155,6 +155,7 @@ const onLoad = async () => {
   setAudioElementsSinkIds();
   loadTranslateLanguageCodes();
   loadVoiceIds();
+  setLatencyTrackingUIVisibility();
   initCCP(onConnectInitialized);
 };
 
@@ -201,6 +202,7 @@ const bindUIElements = () => {
     customerStopTranscriptionButton: document.getElementById("customerStopTranscriptionButton"),
     customerTranscriptionTextOutputDiv: document.getElementById("customerTranscriptionTextOutputDiv"),
     customerStreamMicCheckbox: document.getElementById("customerStreamMicCheckbox"),
+    customerStreamMicVolume: document.getElementById("customerStreamMicVolume"),
     customerStreamTranslationCheckbox: document.getElementById("customerStreamTranslationCheckbox"),
     customerAudioFeedbackEnabledCheckbox: document.getElementById("customerAudioFeedbackEnabledCheckbox"),
     //Translate Customer UI Elements
@@ -254,6 +256,9 @@ const bindUIElements = () => {
 
     //Transcript UI Elements
     divTranscriptContainer: document.getElementById("divTranscriptContainer"),
+
+    //Latency Customer UI Elements
+    latencyTrackingPanels: document.querySelectorAll(".control-group-latency"),
   };
 };
 
@@ -283,9 +288,16 @@ const initEventListeners = () => {
   CCP_V2V.UI.customerStreamMicCheckbox.addEventListener("change", (event) => {
     if (event.target.checked) {
       CCP_V2V.UI.fromCustomerAudioElement.muted = false;
+      CCP_V2V.UI.fromCustomerAudioElement.volume = parseFloat(CCP_V2V.UI.customerStreamMicVolume.value);
     } else {
       CCP_V2V.UI.fromCustomerAudioElement.muted = true;
     }
+  });
+
+  CCP_V2V.UI.customerStreamMicVolume.addEventListener("input", (event) => {
+    const micVolume = parseFloat(event.target.value);
+    console.log(`${LOGGER_PREFIX} - customerStreamMicVolume input - Setting microphone volume to: ${micVolume}`);
+    CCP_V2V.UI.fromCustomerAudioElement.volume = micVolume;
   });
 
   CCP_V2V.UI.customerAudioFeedbackEnabledCheckbox.addEventListener("change", (event) => {
@@ -324,9 +336,14 @@ const initEventListeners = () => {
   CCP_V2V.UI.agentStreamMicCheckbox.addEventListener("change", (event) => {
     const selectedMic = CCP_V2V.UI.micSelect.value;
     const micConstraints = getMicrophoneConstraints(selectedMic);
+    const micVolume = parseFloat(CCP_V2V.UI.agentStreamMicVolume.value);
     if (event.target.checked) {
-      if (ToCustomerAudioStreamManager != null) ToCustomerAudioStreamManager.startMicrophone(micConstraints);
-    } else {
+      if (ToCustomerAudioStreamManager != null) {
+        console.log(`${LOGGER_PREFIX} - agentStreamMicCheckbox change - Starting microphone with volume: ${micVolume}`);
+        ToCustomerAudioStreamManager.startMicrophone(micConstraints).then(() => {
+          ToCustomerAudioStreamManager.setMicrophoneVolume(micVolume);
+        })
+      }    } else {
       if (ToCustomerAudioStreamManager != null) ToCustomerAudioStreamManager.stopMicrophone();
     }
   });
@@ -384,6 +401,16 @@ const initCCP = async (onConnectInitialized) => {
     });
   } else {
     console.info(`${LOGGER_PREFIX} - Amazon Connect CCP Already Initialized`);
+  }
+};
+
+const setLatencyTrackingUIVisibility = () => {
+  console.log(`${LOGGER_PREFIX} - Latency tracking enabled: ${LATENCY_TRACKING_ENABLED}`);
+  if (!LATENCY_TRACKING_ENABLED) {
+    console.log(`${LOGGER_PREFIX} - Latency tracking is disabled, hiding latency tracking UI panels`);
+    CCP_V2V.UI.latencyTrackingPanels.forEach((panel) => {
+      panel.style.display = "none";
+    });
   }
 };
 
@@ -691,7 +718,6 @@ async function customerStartSession(audioLatencyTrackManager) {
     onTranscription: handleCustomerTranscript,
     onTranslation: handleCustomerTranslateText,
     onAudio: handleCustomerSynthesis,
-    onLatencyUpdate: handleCustomerLatencyUpdate,
   });
   try {
     await DeepLVoiceClientCustomer.startSession({
@@ -715,7 +741,6 @@ async function agentStartSession(audioLatencyTrackManager) {
     onTranscription: handleAgentTranscript,
     onTranslation: handleAgentTranslateText,
     onAudio: handleAgentSynthesis,
-    onLatencyUpdate: handleAgentLatencyUpdate,
   });
   try {
     await DeepLVoiceClientAgent.startSession({
@@ -735,7 +760,7 @@ async function customerStartStreaming() {
   try {
     if (CCP_V2V.UI.customerStreamMicCheckbox.checked === true) {
       //we want agent to hear the customer's original voice, so we reduce the fromCustomerAudioElement volume
-      CCP_V2V.UI.fromCustomerAudioElement.volume = 0.3;
+      CCP_V2V.UI.fromCustomerAudioElement.volume = parseFloat(CCP_V2V.UI.customerStreamMicVolume.value);
     } else {
       //we don't want agent to hear the customer's original voice, so we mute the fromCustomerAudioElement
       CCP_V2V.UI.fromCustomerAudioElement.muted = true;
@@ -776,11 +801,11 @@ async function customerStopStreaming() {
   if (DeepLVoiceClientCustomer) {
     DeepLVoiceClientCustomer.endAudio();
     DeepLVoiceClientCustomer.disconnect();
-    DeepLVoiceClientCustomer.resetLatencyStats();
     DeepLVoiceClientCustomer = null;
   }
 
   if (audioLatencyTrackManager) {
+    audioLatencyTrackManager.resetLatencyTracking("customer");
     audioLatencyTrackManager.dispose();
     audioLatencyTrackManager = null;
   }
@@ -838,11 +863,11 @@ async function agentStopStreaming() {
   if (DeepLVoiceClientAgent) {
     DeepLVoiceClientAgent.endAudio();
     DeepLVoiceClientAgent.disconnect();
-    DeepLVoiceClientAgent.resetLatencyStats();
     DeepLVoiceClientAgent = null;
   }
 
   if (audioLatencyTrackManager) {
+    audioLatencyTrackManager.resetLatencyTracking("agent");
     audioLatencyTrackManager.dispose();
     audioLatencyTrackManager = null;
   }
@@ -850,7 +875,7 @@ async function agentStopStreaming() {
   enableMicrophoneAndSpeakerSelection();
 }
 
-function toggleAgentTranscriptionMute() {
+async function toggleAgentTranscriptionMute() {
   if (AmazonTranscribeToCustomerAudioStream) {
     const audioTrack = AmazonTranscribeToCustomerAudioStream.stream.getAudioTracks()[0];
     if (audioTrack) {
@@ -863,7 +888,8 @@ function toggleAgentTranscriptionMute() {
       if (IsAgentTranscriptionMuted || !CCP_V2V.UI.agentStreamMicCheckbox.checked) {
         ToCustomerAudioStreamManager.stopMicrophone();
       } else {
-        ToCustomerAudioStreamManager.startMicrophone(micConstraints);
+        await ToCustomerAudioStreamManager.startMicrophone(micConstraints, parseFloat(CCP_V2V.UI.agentStreamMicVolume.value));
+        ToCustomerAudioStreamManager.setMicrophoneVolume(parseFloat(CCP_V2V.UI.agentStreamMicVolume.value));
       }
       CCP_V2V.UI.agentMuteTranscriptionButton.textContent = IsAgentTranscriptionMuted ? "Unmute" : "Mute";
     }
@@ -957,14 +983,14 @@ async function loadTranslateLanguageCodes() {
   CCP_V2V.UI.agentTranslateToLanguageSaveButton.style.display = 'none';
 }
 
-async function handleCustomerTranscript(text, latency) {
+async function handleCustomerTranscript(text) {
   if (isStringUndefinedNullEmpty(text)) return;
 
   setTimeout(() => {
     setBackgroundColour(CCP_V2V.UI.customerTranscriptionTextOutputDiv, "bg-pale-green");
     // If the text content ends in end of sentence punctuation, replace it
     const lastText = CCP_V2V.UI.customerTranscriptionTextOutputDiv.textContent
-    addTranscriptCard(text, null, "toAgent", latency);
+    addTranscriptCard(text, null, "toAgent");
     if (/[.!?]$/.test(lastText)) {
       CCP_V2V.UI.customerTranscriptionTextOutputDiv.textContent = text;
     } else {
@@ -973,7 +999,7 @@ async function handleCustomerTranscript(text, latency) {
   }, 100);
 }
 
-async function handleCustomerTranslateText(text, latency) {
+async function handleCustomerTranslateText(text) {
   if (isStringUndefinedNullEmpty(text)) return;
 
   setTimeout(() => {
@@ -982,11 +1008,11 @@ async function handleCustomerTranslateText(text, latency) {
     } else {
       CCP_V2V.UI.customerTranslatedTextOutputDiv.textContent += text;
     }
-    addTranscriptCard(null, text, "toAgent", latency);
+    addTranscriptCard(null, text, "toAgent");
   }, 100);
 }
 
-async function handleAgentTranslateText(text, latency) {
+async function handleAgentTranslateText(text) {
   if (isStringUndefinedNullEmpty(text)) return;
   setTimeout(() => {
     const lastText = CCP_V2V.UI.agentTranslatedTextOutputDiv.textContent
@@ -995,11 +1021,11 @@ async function handleAgentTranslateText(text, latency) {
     } else {
       CCP_V2V.UI.agentTranslatedTextOutputDiv.textContent += text;
     }
-    addTranscriptCard(null, text, "fromAgent", latency);
+    addTranscriptCard(null, text, "fromAgent");
   }, 100);
 }
 
-async function handleAgentTranscript(text, latency) {
+async function handleAgentTranscript(text) {
   if (isStringUndefinedNullEmpty(text)) return;
 
   setTimeout(() => {
@@ -1010,7 +1036,7 @@ async function handleAgentTranscript(text, latency) {
     } else {
       CCP_V2V.UI.agentTranscriptionTextOutputDiv.textContent += text;
     }
-    addTranscriptCard(text, null, "fromAgent", latency);
+    addTranscriptCard(text, null, "fromAgent");
   }, 100);
 }
 
@@ -1052,70 +1078,6 @@ function handleAgentSynthesis(data) {
   }
 }
 
-// Update latency display
-function updateAgentLatencyDisplay(latencyData) {
-  const { type, current, average, min, max, p95 } = latencyData;
-  
-  const element = document.getElementById(`agent-latency-${type}`);
-  if (!element) return;
-  
-  const valueSpan = element.querySelector('.latency-value');
-  const statsDiv = element.querySelector('.latency-stats');
-  
-  // Update current value
-  valueSpan.textContent = `${Math.round(current)} ms`;
-  
-  // Color code based on latency
-  valueSpan.className = 'latency-value';
-  if (current < 2000) {
-    valueSpan.classList.add('latency-good');
-  } else if (current < 3000) {
-    valueSpan.classList.add('latency-ok');
-  } else {
-    valueSpan.classList.add('latency-bad');
-  }
-  
-  // Update stats
-  statsDiv.textContent = `Avg: ${Math.round(average)} | Min: ${Math.round(min)} | Max: ${Math.round(max)} | P95: ${Math.round(p95)}`;
-}
-
-// Update latency display
-function updateCustomerLatencyDisplay(latencyData) {
-  const { type, current, average, min, max, p95 } = latencyData;
-  
-  const element = document.getElementById(`customer-latency-${type}`);
-  if (!element) return;
-  
-  const valueSpan = element.querySelector('.latency-value');
-  const statsDiv = element.querySelector('.latency-stats');
-  
-  // Update current value
-  valueSpan.textContent = `${Math.round(current)} ms`;
-  
-  // Color code based on latency
-  valueSpan.className = 'latency-value';
-  if (current < 2000) {
-    valueSpan.classList.add('latency-good');
-  } else if (current < 3000) {
-    valueSpan.classList.add('latency-ok');
-  } else {
-    valueSpan.classList.add('latency-bad');
-  }
-  
-  // Update stats
-  statsDiv.textContent = `Avg: ${Math.round(average)} | Min: ${Math.round(min)} | Max: ${Math.round(max)} | P95: ${Math.round(p95)}`;
-}
-
-function handleCustomerLatencyUpdate(latency) {
-  updateCustomerLatencyDisplay(latency);
-  console.log(`customer latency: ${latency}`);
-}
-
-function handleAgentLatencyUpdate(latency) {
-  updateAgentLatencyDisplay(latency);
-  console.log(`agent latency: ${latency}`);
-}
-
 function loadVoiceIds() {
   CCP_V2V.UI.customerVoiceIdSelect.innerHTML = "";
   CCP_V2V.UI.agentVoiceIdSelect.innerHTML = "";
@@ -1151,7 +1113,7 @@ function setBackgroundColour(element, cssClass) {
   }
 }
 
-function addTranscriptCard(sourceText, translatedText, type, latency) {
+function addTranscriptCard(sourceText, translatedText, type) {
   let text = "";
   if (type == "fromAgent") {
     if (isStringUndefinedNullEmpty(sourceText)) return;
@@ -1163,7 +1125,6 @@ function addTranscriptCard(sourceText, translatedText, type, latency) {
   }
   const existingCards = CCP_V2V.UI.divTranscriptContainer.querySelectorAll('.transcript-card');
   let lastCard = null;
-  let lastTextElement = null;
 
   if (existingCards.length > 0) {
       lastCard = existingCards[existingCards.length - 1];
@@ -1181,9 +1142,6 @@ function addTranscriptCard(sourceText, translatedText, type, latency) {
     // If the last text does not end with end of sentence punctuation, append the new text to it
     if (lastText && !/[.!?]$/.test(lastText.trim())) {
       lastTextElement.textContent += text;
-      // if (latency) {
-      //   lastTextElement.textContent += ` (${Math.round(latency)} ms)`;
-      // }
     } else {
       // Create original text element
       const textDiv = document.createElement("div");

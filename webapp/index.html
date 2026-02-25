@@ -127,6 +127,14 @@
                   <input type="checkbox" id="customerAudioFeedbackEnabledCheckbox" name="customerAudioFeedbackEnabledCheckbox" unchecked />
                   <label for="customerAudioFeedbackEnabledCheckbox">Enable Customer Audio Feedback</label>
                 </div>
+                <div class="volume-group">
+                  <label for="customerStreamMicVolume">Microphone Volume:</label>
+                  <input type="range" id="customerStreamMicVolume" min="0" max="1" step="0.05" value="0.1" />
+                </div>
+                <div class="vad-container">
+                  <div id="customerVadIndicator" class="vad-indicator"></div>
+                  <span>Voice Detection</span>
+                </div>
               </div>
               <div class="control-group-translate">
                 <h3>Languages</h3>
@@ -163,23 +171,33 @@
               <div class="control-group-latency">
                 <h3>Latency</h3>
                   <div id="customer-latency-transcription" style="margin-top: 8px;">
-                    Transcription: <span class="latency-value">-- ms</span>
+                    &Delta; Source Audio => Source Text
+                    <div class="latency-value">-- ms</div>
                     <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
                   </div>
                   <div id="customer-latency-translation" style="margin-top: 8px;">
-                    Translation: <span class="latency-value">-- ms</span>
+                    &Delta; Source Audio => Translation Text
+                    <div class="latency-value">-- ms</div>
                     <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
                   </div>
-                  <div id="customer-latency-audioSynthesis" style="margin-top: 8px;">
-                    Audio Synthesis (target => synthesis): <span class="latency-value">-- ms</span>
+                  <div id="customer-latency-tts" style="margin-top: 8px;">
+                    &Delta; Translation Text => Synthesized Voice
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="customer-latency-agentVoiceToCustomerSynthesis" style="margin-top: 8px;">
+                    &Delta; Last Agent Source Audio => First Customer Synthesis
+                    <div class="latency-value">-- ms</div>
                     <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
                   </div>
                   <div id="customer-latency-agentSynthesisToCustomerSynthesis" style="margin-top: 8px;">
-                    Agent Synthesis => Customer Synthesis: <span class="latency-value">-- ms</span>
+                   &Delta;  Last Agent Synthesis => First Customer Synthesis
+                   <div class="latency-value">-- ms</div>
                     <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
                   </div>
                   <div id="customer-latency-agentSynthesisToCustomerVoice" style="margin-top: 8px;">
-                    Agent Synthesis => Customer Voice: <span class="latency-value">-- ms</span>
+                    &Delta; Last Agent Synthesis => First Customer Source Audio
+                    <div class="latency-value">-- ms</div>
                     <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
                   </div>
               </div>
@@ -201,12 +219,12 @@
                   <input type="checkbox" id="agentAudioFeedbackEnabledCheckbox" name="agentAudioFeedbackEnabledCheckbox" unchecked />
                   <label for="agentAudioFeedbackEnabledCheckbox">Enable Agent Audio Feedback</label>
                 </div>
-                <div class="button-group">
-                  <button id="agentMuteTranscriptionButton">Mute</button>
-                </div>
                 <div class="volume-group">
                   <label for="agentStreamMicVolume">Microphone Volume:</label>
                   <input type="range" id="agentStreamMicVolume" min="0" max="1" step="0.05" value="0.1" />
+                </div>
+                <div class="button-group">
+                  <button id="agentMuteTranscriptionButton">Mute</button>
                 </div>
               </div>
               <div class="control-group-translate">
@@ -244,23 +262,33 @@
               <div class="control-group-latency">
                 <h3>Latency</h3>
                   <div id="agent-latency-transcription" style="margin-top: 8px;">
-                    Transcription: <span class="latency-value">-- ms</span>
+                    &Delta; Source Audio => Source Text
+                    <div class="latency-value">-- ms</div>
                     <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
                   </div>
                   <div id="agent-latency-translation" style="margin-top: 8px;">
-                    Translation: <span class="latency-value">-- ms</span>
+                    &Delta; Source Audio => Translation Text
+                    <div class="latency-value">-- ms</div>
                     <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
                   </div>
-                  <div id="agent-latency-audioSynthesis" style="margin-top: 8px;">
-                    Audio Synthesis (target => synthesis): <span class="latency-value">-- ms</span>
+                  <div id="agent-latency-tts" style="margin-top: 8px;">
+                    &Delta; Translation Text => Synthesized Voice
+                    <div class="latency-value">-- ms</div>
+                    <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
+                  </div>
+                  <div id="agent-latency-customerVoiceToAgentSynthesis" style="margin-top: 8px;">
+                    &Delta; Last Customer Source Audio => First Agent Synthesis
+                    <div class="latency-value">-- ms</div>
                     <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
                   </div>
                   <div id="agent-latency-customerSynthesisToAgentSynthesis" style="margin-top: 8px;">
-                    Customer Synthesis => Agent Synthesis: <span class="latency-value">-- ms</span>
+                    &Delta; Last Customer Synthesis => First Agent Synthesis
+                    <div class="latency-value">-- ms</div>
                     <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
                   </div>
                   <div id="agent-latency-customerSynthesisToAgentVoice" style="margin-top: 8px;">
-                    Customer Synthesis => Agent Voice: <span class="latency-value">-- ms</span>
+                    &Delta; Last Customer Synthesis => First Agent Source Audio
+                    <div class="latency-value">-- ms</div>                    
                     <div class="latency-stats">Avg: -- | Min: -- | Max: -- | P95: --</div>
                   </div>
               </div>
