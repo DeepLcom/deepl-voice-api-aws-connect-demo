@@ -19,8 +19,8 @@ env:
   AWS_REGION_US: us-west-1
 
 jobs:
-  build-webapp:
-    name: Build Webapp
+  build-webapp-eu:
+    name: Build Webapp (EU)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -45,22 +45,66 @@ jobs:
           cd webapp
           npm ci
 
-      - name: Build webapp
+      - name: Build webapp for EU
+        env:
+          VITE_GET_LANGUAGES_PROXY: https://wjjabkvfyvqxqpizezx7jdsqny0hrpsa.lambda-url.eu-west-2.on.aws/
+          VITE_REQUEST_SESSION_PROXY: https://uexiwsmey6vz43rr3szwu6udeq0jotax.lambda-url.eu-west-2.on.aws/
         run: |
           cd cdk-stacks
           npm run build:webapp
 
-      - name: Upload webapp artifacts
+      - name: Upload EU webapp artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: webapp-dist
+          name: webapp-dist-eu
+          path: webapp/dist/
+          retention-days: 1
+
+  build-webapp-us:
+    name: Build Webapp (US)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            cdk-stacks/package-lock.json
+            webapp/package-lock.json
+
+      - name: Install CDK dependencies
+        run: |
+          cd cdk-stacks
+          npm ci
+
+      - name: Install webapp dependencies
+        run: |
+          cd webapp
+          npm ci
+
+      - name: Build webapp for US
+        env:
+          VITE_GET_LANGUAGES_PROXY: https://2zvm3hfyunpfl6ot5f6ni3sysu0dwqbz.lambda-url.us-west-1.on.aws/
+          VITE_REQUEST_SESSION_PROXY: https://vgs3633jo7wnecrlizbe2v6aja0lrron.lambda-url.us-west-1.on.aws/
+        run: |
+          cd cdk-stacks
+          npm run build:webapp
+
+      - name: Upload US webapp artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: webapp-dist-us
           path: webapp/dist/
           retention-days: 1
 
   deploy-to-eu:
     name: Deploy to EU (Manual)
     runs-on: ubuntu-latest
-    needs: build-webapp
+    needs: build-webapp-eu
     if: github.ref == 'refs/heads/main'
     environment:
       name: production-eu
@@ -74,10 +118,10 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Download webapp artifacts
+      - name: Download EU webapp artifacts
         uses: actions/download-artifact@v4
         with:
-          name: webapp-dist
+          name: webapp-dist-eu
           path: webapp/dist/
 
       - name: Configure AWS credentials
@@ -113,7 +157,7 @@ jobs:
   deploy-to-us:
     name: Deploy to US (Manual)
     runs-on: ubuntu-latest
-    needs: build-webapp
+    needs: build-webapp-us
     if: github.ref == 'refs/heads/main'
     environment:
       name: production-us
@@ -127,10 +171,10 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Download webapp artifacts
+      - name: Download US webapp artifacts
         uses: actions/download-artifact@v4
         with:
-          name: webapp-dist
+          name: webapp-dist-us
           path: webapp/dist/
 
       - name: Configure AWS credentials

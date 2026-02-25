@@ -12,6 +12,7 @@ export class SearchableSelect {
     this.selectedValue = selectElement.value;
     this.options = [];
     this.filteredOptions = [];
+    this.highlightedIndex = -1;
 
     this.init();
   }
@@ -104,6 +105,8 @@ export class SearchableSelect {
       });
     }
 
+    // Reset highlight to first option when filtering
+    this.highlightedIndex = this.filteredOptions.length > 0 ? 0 : -1;
     this.renderOptions();
   }
 
@@ -116,6 +119,7 @@ export class SearchableSelect {
       noResults.className = 'searchable-select-option searchable-select-no-results';
       noResults.textContent = 'No languages found';
       this.optionsList.appendChild(noResults);
+      this.highlightedIndex = -1;
       return;
     }
 
@@ -130,7 +134,15 @@ export class SearchableSelect {
         optionEl.classList.add('selected');
       }
 
+      if (index === this.highlightedIndex) {
+        optionEl.classList.add('highlighted');
+      }
+
       optionEl.addEventListener('click', () => this.selectOption(opt));
+      optionEl.addEventListener('mouseenter', () => {
+        this.highlightedIndex = index;
+        this.updateHighlight();
+      });
 
       this.optionsList.appendChild(optionEl);
     });
@@ -187,6 +199,7 @@ export class SearchableSelect {
     this.container.classList.add('open');
     this.searchInput.value = '';
     this.filteredOptions = [...this.options];
+    this.highlightedIndex = 0;
     this.renderOptions();
 
     // Focus the search input
@@ -201,14 +214,70 @@ export class SearchableSelect {
   }
 
   handleKeydown(e) {
+    const optionsToRender = this.filteredOptions.length > 0 ? this.filteredOptions : this.options;
+
     if (e.key === 'Escape') {
+      e.preventDefault();
       this.close();
     } else if (e.key === 'Enter') {
-      // Select first option if available
-      const firstOption = this.filteredOptions[0] || this.options[0];
-      if (firstOption) {
-        this.selectOption(firstOption);
+      e.preventDefault();
+      // Select highlighted option or first option if none highlighted
+      const selectedOption = this.highlightedIndex >= 0
+        ? optionsToRender[this.highlightedIndex]
+        : optionsToRender[0];
+      if (selectedOption) {
+        this.selectOption(selectedOption);
       }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (this.highlightedIndex < optionsToRender.length - 1) {
+        this.highlightedIndex++;
+        this.updateHighlight();
+        this.scrollToHighlighted();
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (this.highlightedIndex > 0) {
+        this.highlightedIndex--;
+        this.updateHighlight();
+        this.scrollToHighlighted();
+      }
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      this.highlightedIndex = 0;
+      this.updateHighlight();
+      this.scrollToHighlighted();
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      this.highlightedIndex = optionsToRender.length - 1;
+      this.updateHighlight();
+      this.scrollToHighlighted();
+    } else if (e.key === 'Tab') {
+      // Allow tab to close and move to next element
+      this.close();
+    }
+  }
+
+  updateHighlight() {
+    const options = this.optionsList.querySelectorAll('.searchable-select-option');
+    options.forEach((opt, index) => {
+      if (index === this.highlightedIndex) {
+        opt.classList.add('highlighted');
+      } else {
+        opt.classList.remove('highlighted');
+      }
+    });
+  }
+
+  scrollToHighlighted() {
+    if (this.highlightedIndex < 0) return;
+
+    const highlightedElement = this.optionsList.querySelector('.highlighted');
+    if (highlightedElement) {
+      highlightedElement.scrollIntoView({
+        block: 'nearest',
+        behavior: 'smooth'
+      });
     }
   }
 
@@ -234,6 +303,22 @@ export class SearchableSelect {
 
   getValue() {
     return this.selectedValue;
+  }
+
+  disable() {
+    this.originalSelect.disabled = true;
+    this.container.classList.add('disabled');
+    this.selectedDisplay.style.opacity = '0.5';
+    this.selectedDisplay.style.cursor = 'not-allowed';
+    this.selectedDisplay.style.pointerEvents = 'none';
+  }
+
+  enable() {
+    this.originalSelect.disabled = false;
+    this.container.classList.remove('disabled');
+    this.selectedDisplay.style.opacity = '1';
+    this.selectedDisplay.style.cursor = 'pointer';
+    this.selectedDisplay.style.pointerEvents = 'auto';
   }
 
   destroy() {

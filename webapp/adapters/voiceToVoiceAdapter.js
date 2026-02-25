@@ -1,16 +1,13 @@
 import { getTranscribeAudioStream } from "../utils/transcribeUtils";
-import {
-  LATENCY_TRACKING_ENABLED,
-  PIPELINE_LATENCY_MAX_MS_GOOD,
-  PIPELINE_LATENCY_MAX_MS_OK
-} from "../constants";
+import { SUPPORTED_SOURCE_LANGUAGES, SUPPORTED_TARGET_LANGUAGES } from "../supportedLanguages.js";
+
 
 class DeepLVoiceClient {
   constructor(options = {}) {
     this.type = options.type; // "agent" or "customer"
     this.baseUrl = options.baseUrl || "https://api.deepl.com";
-    this.getLanguagesProxy = options.getLanguagesProxy || import.meta.env.VITE_GET_LANGUAGES_PROXY ||"https://2zvm3hfyunpfl6ot5f6ni3sysu0dwqbz.lambda-url.us-west-1.on.aws/"
-    this.requestSessionProxy = options.requestSessionProxy || import.meta.env.VITE_REQUEST_SESSION_PROXY || "https://vgs3633jo7wnecrlizbe2v6aja0lrron.lambda-url.us-west-1.on.aws/";
+    this.getLanguagesProxy = options.getLanguagesProxy || import.meta.env.VITE_GET_LANGUAGES_PROXY || "https://wjjabkvfyvqxqpizezx7jdsqny0hrpsa.lambda-url.eu-west-2.on.aws/"
+    this.requestSessionProxy = options.requestSessionProxy || import.meta.env.VITE_REQUEST_SESSION_PROXY || "https://uexiwsmey6vz43rr3szwu6udeq0jotax.lambda-url.eu-west-2.on.aws/";
     
     this.ws = null;
     this.streamingUrl = null;
@@ -45,29 +42,33 @@ class DeepLVoiceClient {
   }
 
   async getLanguages(type = "source") {
-    try {
-      const response = await fetch(this.getLanguagesProxy, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({ type }),
-      });
+    // Return hard-coded supported languages from config
+    return type === "source" ? SUPPORTED_SOURCE_LANGUAGES : SUPPORTED_TARGET_LANGUAGES;
 
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(`Get languages failed: ${response.status} - ${error.message || response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      if (this.onError) {
-        this.onError(error);
-      }
-      throw error;
-    }
+    // Lambda proxy code (commented out - uncomment to fetch from API)
+    // try {
+    //   const response = await fetch(this.getLanguagesProxy, {
+    //     method: 'POST',
+    //     headers: {
+    //       'Content-Type': 'application/json',
+    //       'Accept': 'application/json',
+    //     },
+    //     body: JSON.stringify({ type }),
+    //   });
+    //
+    //   if (!response.ok) {
+    //     const error = await response.json().catch(() => ({}));
+    //     throw new Error(`Get languages failed: ${response.status} - ${error.message || response.statusText}`);
+    //   }
+    //
+    //   const data = await response.json();
+    //   return data;
+    // } catch (error) {
+    //   if (this.onError) {
+    //     this.onError(error);
+    //   }
+    //   throw error;
+    // }
   }
 
   /**

@@ -63,6 +63,8 @@ let DeepLVoiceClientCustomer;
 let audioLatencyTrackManager;
 
 // SearchableSelect instances for language selection
+let customerLanguageSearchable;
+let agentLanguageSearchable;
 let customerTranslateFromLanguageSearchable;
 let customerTranslateToLanguageSearchable;
 let agentTranslateFromLanguageSearchable;
@@ -205,7 +207,10 @@ const bindUIElements = () => {
     customerStreamMicVolume: document.getElementById("customerStreamMicVolume"),
     customerStreamTranslationCheckbox: document.getElementById("customerStreamTranslationCheckbox"),
     customerAudioFeedbackEnabledCheckbox: document.getElementById("customerAudioFeedbackEnabledCheckbox"),
-    //Translate Customer UI Elements
+    //Translate Customer UI Elements - New simplified
+    customerLanguageSelect: document.getElementById("customerLanguageSelect"),
+    customerLanguageSaveButton: document.getElementById("customerLanguageSaveButton"),
+    //Translate Customer UI Elements - Original (hidden)
     customerTranslateFromLanguageSelect: document.getElementById("customerTranslateFromLanguageSelect"),
     customerTranslateToLanguageSelect: document.getElementById("customerTranslateToLanguageSelect"),
     customerTranslateFromLanguageSaveButton: document.getElementById("customerTranslateFromLanguageSaveButton"),
@@ -234,7 +239,10 @@ const bindUIElements = () => {
     agentStreamMicCheckbox: document.getElementById("agentStreamMicCheckbox"),
     agentStreamMicVolume: document.getElementById("agentStreamMicVolume"),
     agentStreamTranslationCheckbox: document.getElementById("agentStreamTranslationCheckbox"),
-    //Translate Agent UI Elements
+    //Translate Agent UI Elements - New simplified
+    agentLanguageSelect: document.getElementById("agentLanguageSelect"),
+    agentLanguageSaveButton: document.getElementById("agentLanguageSaveButton"),
+    //Translate Agent UI Elements - Original (hidden)
     agentTranslateFromLanguageSelect: document.getElementById("agentTranslateFromLanguageSelect"),
     agentTranslateToLanguageSelect: document.getElementById("agentTranslateToLanguageSelect"),
     agentTranslateFromLanguageSaveButton: document.getElementById("agentTranslateFromLanguageSaveButton"),
@@ -728,6 +736,8 @@ async function customerStartSession(audioLatencyTrackManager) {
       targetMediaContentType: "audio/pcm;encoding=s16le;rate=16000",
       targetMediaVoice: CCP_V2V.UI.customerVoiceIdSelect.value,
     });
+    // Disable language selection during active session
+    if (customerLanguageSearchable) customerLanguageSearchable.disable();
   } catch (error) {
     console.error(`${LOGGER_PREFIX} - customerStartSession - Error starting customer session:`, error);
     raiseError(`Error starting customer session: ${error}`);
@@ -750,6 +760,8 @@ async function agentStartSession(audioLatencyTrackManager) {
       sourceMediaContentType: "audio/pcm;encoding=s16le;rate=48000",
       targetMediaContentType: "audio/pcm;encoding=s16le;rate=16000",
     });
+    // Disable language selection during active session
+    if (agentLanguageSearchable) agentLanguageSearchable.disable();
   } catch (error) {
     console.error(`${LOGGER_PREFIX} - agentStartSession - Error starting agent session:`, error);
     raiseError(`Error starting agent session: ${error}`);
@@ -812,6 +824,9 @@ async function customerStopStreaming() {
 
   //un-mute the audio element
   CCP_V2V.UI.fromCustomerAudioElement.muted = false;
+
+  // Re-enable language selection after session ends
+  if (customerLanguageSearchable) customerLanguageSearchable.enable();
 }
 
 async function agentStartStreaming() {
@@ -873,6 +888,9 @@ async function agentStopStreaming() {
   }
 
   enableMicrophoneAndSpeakerSelection();
+
+  // Re-enable language selection after session ends
+  if (agentLanguageSearchable) agentLanguageSearchable.enable();
 }
 
 async function toggleAgentTranscriptionMute() {
@@ -910,11 +928,21 @@ async function loadTranslateLanguageCodes() {
     return [];
   });
   console.log(`${LOGGER_PREFIX} - loadTranslateLanguageCodes - DeepL Translate From Languages:`, deepLTranslateFromLanguages);
+
+  // Populate new simplified language selects
   deepLTranslateFromLanguages.forEach((language) => {
     const option = document.createElement("option");
     option.value = language.language;
     option.textContent = language.name;
+    CCP_V2V.UI.customerLanguageSelect.appendChild(option.cloneNode(true));
+    CCP_V2V.UI.agentLanguageSelect.appendChild(option.cloneNode(true));
+  });
 
+  // Populate hidden legacy selects (for backward compatibility)
+  deepLTranslateFromLanguages.forEach((language) => {
+    const option = document.createElement("option");
+    option.value = language.language;
+    option.textContent = language.name;
     CCP_V2V.UI.customerTranslateFromLanguageSelect.appendChild(option);
     CCP_V2V.UI.agentTranslateFromLanguageSelect.appendChild(option.cloneNode(true));
   });
@@ -923,64 +951,72 @@ async function loadTranslateLanguageCodes() {
     const option = document.createElement("option");
     option.value = language.language;
     option.textContent = language.name;
-
     CCP_V2V.UI.customerTranslateToLanguageSelect.appendChild(option.cloneNode(true));
     CCP_V2V.UI.agentTranslateToLanguageSelect.appendChild(option.cloneNode(true));
   });
-  //set en as default
-  CCP_V2V.UI.customerTranslateFromLanguageSelect.value = "EN";
-  CCP_V2V.UI.customerTranslateToLanguageSelect.value = "ES";
+  //set en as default for customer, es for agent
+  const defaultCustomerLang = "en";
+  const defaultAgentLang = "es";
 
-  CCP_V2V.UI.agentTranslateFromLanguageSelect.value = "EN";
-  CCP_V2V.UI.agentTranslateToLanguageSelect.value = "ES";
+  CCP_V2V.UI.customerLanguageSelect.value = defaultCustomerLang;
+  CCP_V2V.UI.agentLanguageSelect.value = defaultAgentLang;
 
-  //pre-select saved translateFromLanguage
-  const savedCustomerTranslateFromLanguage = getLocalStorageValueByKey("customerTranslateFromLanguage");
-  if (savedCustomerTranslateFromLanguage) {
-    CCP_V2V.UI.customerTranslateFromLanguageSelect.value = savedCustomerTranslateFromLanguage;
+  //pre-select saved languages (for new simplified selects)
+  const savedCustomerLanguage = getLocalStorageValueByKey("customerLanguage");
+  const savedAgentLanguage = getLocalStorageValueByKey("agentLanguage");
+
+  if (savedCustomerLanguage) {
+    CCP_V2V.UI.customerLanguageSelect.value = savedCustomerLanguage;
+  }
+  if (savedAgentLanguage) {
+    CCP_V2V.UI.agentLanguageSelect.value = savedAgentLanguage;
   }
 
-  const savedAgentTranslateFromLanguage = getLocalStorageValueByKey("agentTranslateFromLanguage");
-  if (savedAgentTranslateFromLanguage) {
-    CCP_V2V.UI.agentTranslateFromLanguageSelect.value = savedAgentTranslateFromLanguage;
-  }
+  // Sync simplified selects to hidden legacy selects
+  const syncLanguages = () => {
+    const customerLang = CCP_V2V.UI.customerLanguageSelect.value;
+    const agentLang = CCP_V2V.UI.agentLanguageSelect.value;
 
-  //pre-select saved translateToLanguage
-  const savedCustomerTranslateToLanguage = getLocalStorageValueByKey("customerTranslateToLanguage");
-  if (savedCustomerTranslateToLanguage) {
-    CCP_V2V.UI.customerTranslateToLanguageSelect.value = savedCustomerTranslateToLanguage;
-  }
+    // Customer speaks customerLang, wants to hear agentLang
+    CCP_V2V.UI.customerTranslateFromLanguageSelect.value = customerLang;
+    CCP_V2V.UI.customerTranslateToLanguageSelect.value = agentLang;
 
-  const savedAgentTranslateToLanguage = getLocalStorageValueByKey("agentTranslateToLanguage");
-  if (savedAgentTranslateToLanguage) {
-    CCP_V2V.UI.agentTranslateToLanguageSelect.value = savedAgentTranslateToLanguage;
-  }
+    // Agent speaks agentLang, wants to hear customerLang
+    CCP_V2V.UI.agentTranslateFromLanguageSelect.value = agentLang;
+    CCP_V2V.UI.agentTranslateToLanguageSelect.value = customerLang;
+  };
 
-  // Initialize SearchableSelect for all language dropdowns
+  // Initial sync
+  syncLanguages();
+
+  // Initialize SearchableSelect for new simplified language dropdowns
+  customerLanguageSearchable = new SearchableSelect(CCP_V2V.UI.customerLanguageSelect);
+  agentLanguageSearchable = new SearchableSelect(CCP_V2V.UI.agentLanguageSelect);
+
+  // Initialize SearchableSelect for hidden legacy dropdowns (still needed for the backend)
   customerTranslateFromLanguageSearchable = new SearchableSelect(CCP_V2V.UI.customerTranslateFromLanguageSelect);
   customerTranslateToLanguageSearchable = new SearchableSelect(CCP_V2V.UI.customerTranslateToLanguageSelect);
   agentTranslateFromLanguageSearchable = new SearchableSelect(CCP_V2V.UI.agentTranslateFromLanguageSelect);
   agentTranslateToLanguageSearchable = new SearchableSelect(CCP_V2V.UI.agentTranslateToLanguageSelect);
 
   // Explicitly set the saved values to ensure they display correctly
-  if (savedCustomerTranslateFromLanguage) {
-    customerTranslateFromLanguageSearchable.setValue(savedCustomerTranslateFromLanguage);
+  if (savedCustomerLanguage) {
+    customerLanguageSearchable.setValue(savedCustomerLanguage);
   }
-  if (savedCustomerTranslateToLanguage) {
-    customerTranslateToLanguageSearchable.setValue(savedCustomerTranslateToLanguage);
-  }
-  if (savedAgentTranslateFromLanguage) {
-    agentTranslateFromLanguageSearchable.setValue(savedAgentTranslateFromLanguage);
-  }
-  if (savedAgentTranslateToLanguage) {
-    agentTranslateToLanguageSearchable.setValue(savedAgentTranslateToLanguage);
+  if (savedAgentLanguage) {
+    agentLanguageSearchable.setValue(savedAgentLanguage);
   }
 
-  // Hide the Save buttons since we now auto-save on selection
-  CCP_V2V.UI.customerTranslateFromLanguageSaveButton.style.display = 'none';
-  CCP_V2V.UI.customerTranslateToLanguageSaveButton.style.display = 'none';
-  CCP_V2V.UI.agentTranslateFromLanguageSaveButton.style.display = 'none';
-  CCP_V2V.UI.agentTranslateToLanguageSaveButton.style.display = 'none';
+  // Add change listeners to sync languages when user changes selection
+  CCP_V2V.UI.customerLanguageSelect.addEventListener('change', () => {
+    syncLanguages();
+    window.localStorage.setItem('customerLanguage', CCP_V2V.UI.customerLanguageSelect.value);
+  });
+
+  CCP_V2V.UI.agentLanguageSelect.addEventListener('change', () => {
+    syncLanguages();
+    window.localStorage.setItem('agentLanguage', CCP_V2V.UI.agentLanguageSelect.value);
+  });
 }
 
 async function handleCustomerTranscript(text) {
