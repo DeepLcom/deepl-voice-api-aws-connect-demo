@@ -1,5 +1,9 @@
 import { getTranscribeAudioStream } from "../utils/transcribeUtils";
-
+import {
+  LATENCY_TRACKING_ENABLED,
+  PIPELINE_LATENCY_MAX_MS_GOOD,
+  PIPELINE_LATENCY_MAX_MS_OK
+} from "../constants";
 
 class DeepLVoiceClient {
   constructor(options = {}) {
@@ -19,7 +23,6 @@ class DeepLVoiceClient {
     this.onTranscription = options.onTranscription || null;
     this.onTranslation = options.onTranslation || null;
     this.onAudio = options.onAudio || null;
-    this.onLatencyUpdate = options.onLatencyUpdate || null;
     this.onStreamEnd = null;
     this.onError = null;
     this.onConnect = null;
@@ -209,23 +212,14 @@ class DeepLVoiceClient {
             const lastSegment = update.concluded[update.concluded.length - 1];
             const audioEndTime = lastSegment.end_time;
                       
-            const chunk = this.findChunkByAudioTime(audioEndTime);
-            let latency = null;
-            
-            if (chunk) {
-                latency = receiveTime - chunk.sentAt;
-                
-                this.latencyMetrics.transcription.push(latency);
-                this.emitLatencyUpdate('transcription', latency);
-            }
+            this.audioLatencyTrackManager.enqueueTranscription(this.type, receiveTime, audioEndTime);
 
             if (this.onTranscription) {
-                const sourceTranscriptUpdate = message.source_transcript_update;
-                const concludedText = sourceTranscriptUpdate.concluded
+                const concludedText = update.concluded
                     .map(item => item.text)
                     .join('');
-                console.log('Transcription update - concluded text:', concludedText);
-                this.onTranscription(concludedText, latency);
+                console.log(`${this.type} transcription update - concluded text: ${concludedText}`);
+                this.onTranscription(concludedText);
             }
           }
       }
@@ -236,30 +230,15 @@ class DeepLVoiceClient {
             const lastSegment = update.concluded[update.concluded.length - 1];
             const audioEndTime = lastSegment.end_time;
 
-            this.concludedTargetTranscriptTimes.push({ receivedAt: receiveTime, audioEndTime });
-            if (this.concludedTargetTranscriptTimes.length > 50) {
-                this.concludedTargetTranscriptTimes.shift();
-            }
-
-            const chunk = this.findChunkByAudioTime(audioEndTime);
-            let latency = null;
-
-            if (chunk) {
-                latency = receiveTime - chunk.sentAt;
-                
-                this.latencyMetrics.translation.push(latency);
-                this.emitLatencyUpdate('translation', latency);
-                
-                console.log(`📊 Translation latency: ${Math.round(latency)}ms`);
-            }
+            this.audioLatencyTrackManager.enqueueTranslation(this.type, receiveTime, audioEndTime);
 
             if (this.onTranslation) {
-                const targetTranscriptUpdate = message.target_transcript_update;
-                const concludedText = targetTranscriptUpdate.concluded
+                const concludedText = update.concluded
                     .map(item => item.text)
                     .join('');
-                console.log('Translation update - concluded text:', concludedText);
-                this.onTranslation(concludedText, latency);
+                console.log(`${this.type} translation update - concluded text: ${concludedText}`);
+                this.onTranslation(concludedText);
+
             }
         }
       }
@@ -267,20 +246,13 @@ class DeepLVoiceClient {
         const update = message.target_media_chunk;
         
         if (update.data && update.data.length > 0) {
-          if (this.concludedTargetTranscriptTimes.length > 0) {
-            const latestTargetTranscript = this.concludedTargetTranscriptTimes[this.concludedTargetTranscriptTimes.length - 1];
-            const synthesisLatency = receiveTime - latestTargetTranscript.receivedAt;
-            this.latencyMetrics.audioSynthesis.push(synthesisLatency);
-            this.emitLatencyUpdate('audioSynthesis', synthesisLatency);
-            this.audioLatencyTrackManager.handleSynthesis(this.type);
-            console.log(`📊 Audio synthesis latency: ${Math.round(synthesisLatency)}ms`);
-          }
           if (this.onAudio) {
               const targetMediaChunk = message.target_media_chunk;
               const data = targetMediaChunk.data;
-              console.log('Received audio chunk - base64 length:', data[0].length);
+              console.log(`${this.type} target media chunk update: ${data.length} bytes`);
               this.onAudio(data);
           }
+          this.audioLatencyTrackManager.enqueueSynthesis(this.type, receiveTime);
         }
       }
       else if (message.end_of_source_transcript) {
@@ -318,67 +290,6 @@ class DeepLVoiceClient {
         }
     }
   }
-  
-  emitLatencyUpdate(type, latency) {
-    if (this.onLatencyUpdate) {
-      const stats = this.getLatencyStats(type);
-      this.onLatencyUpdate({
-        type,
-        current: latency,
-        average: stats.average,
-        min: stats.min,
-        max: stats.max,
-        p95: stats.p95
-      });
-    }
-  }
-
-  getLatencyStats(type) {
-    const metrics = this.latencyMetrics[type] || [];
-    if (metrics.length === 0) {
-      return { average: 0, min: 0, max: 0, p95: 0 };
-    }
-    
-    const sorted = [...metrics].sort((a, b) => a - b);
-    const sum = metrics.reduce((a, b) => a + b, 0);
-    
-    return {
-      average: sum / metrics.length,
-      min: sorted[0],
-      max: sorted[sorted.length - 1],
-      p95: sorted[Math.floor(sorted.length * 0.95)]
-    };
-  }
-  
-  resetLatencyStats() {
-    this.latencyMetrics = {
-      transcription: [],
-      translation: [],
-      audioSynthesis: []
-    };
-    this.audioChunks = [];
-    this.cumulativeAudioTime = 0;
-    this.concludedTargetTranscriptTimes = [];
-  }
-
-  findChunkByAudioTime(audioTimeMs) {
-    // Find the chunk that contains this audio timestamp
-    for (let i = 0; i < this.audioChunks.length; i++) {
-      const chunk = this.audioChunks[i];
-      if (audioTimeMs >= chunk.audioStartMs && audioTimeMs <= chunk.audioEndMs) {
-        return chunk;
-      }
-    }
-    
-    // If exact match not found, find closest chunk before this time
-    for (let i = this.audioChunks.length - 1; i >= 0; i--) {
-      if (this.audioChunks[i].audioEndMs <= audioTimeMs) {
-        return this.audioChunks[i];
-      }
-    }
-    
-    return null;
-  }
 
   /**
      * Send audio data to the server
@@ -397,7 +308,8 @@ class DeepLVoiceClient {
             while (buffer.length >= chunkSize) {
                 const chunkToSend = buffer.slice(0, chunkSize);
                 buffer = buffer.slice(chunkSize);
-                this.audioLatencyTrackManager.handleAudio(this.type, chunkToSend);
+
+                this.audioLatencyTrackManager.enqueueAudio(this.type, chunkToSend, performance.now());
                 this.sendAudio(chunkToSend);
             }
         }  
@@ -413,31 +325,12 @@ class DeepLVoiceClient {
     if (!this.isConnected) {
       if (this.shouldReconnect) {
         console.warn('WebSocket not connected, attempting to start new session...');
+        this.audioLatencyTrackManager.resetLatencyTracking(this.type);
         this.startSession(this.sessionConfig).catch(error => {
             console.error('Failed to start new session during sendAudio:', error);
         });
       }
       return;
-    }
-    const sendTime = performance.now();
-    
-    // Calculate actual audio duration of this chunk
-    const numSamples = audioBuffer.length / this.bytesPerSample;
-    const durationMs = (numSamples / this.sampleRate) * 1000;
-    
-    // Track this chunk with precise audio timing
-    const chunk = {
-        sentAt: sendTime,
-        audioStartMs: this.cumulativeAudioTime,
-        audioEndMs: this.cumulativeAudioTime + durationMs
-    };
-    
-    this.audioChunks.push(chunk);
-    this.cumulativeAudioTime += durationMs;
-    
-    // Keep only last 100 chunks to prevent memory growth
-    if (this.audioChunks.length > 100) {
-      const removed = this.audioChunks.shift();
     }
     
     try {
