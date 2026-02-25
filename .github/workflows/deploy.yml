@@ -9,6 +9,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   AWS_DEFAULT_REGION: eu-west-2
   AWS_REGION_EU: eu-west-2
@@ -59,7 +63,7 @@ jobs:
     needs: build-webapp
     if: github.ref == 'refs/heads/main'
     environment:
-      name: production
+      name: production-eu
       url: https://d3nhkx7cz6sml.cloudfront.net
     steps:
       - name: Checkout code
@@ -112,7 +116,7 @@ jobs:
     needs: build-webapp
     if: github.ref == 'refs/heads/main'
     environment:
-      name: production
+      name: production-us
       url: https://d214xkld0mw6ub.cloudfront.net/
     steps:
       - name: Checkout code
