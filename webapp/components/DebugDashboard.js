@@ -11,8 +11,7 @@
  * - Real-time health monitoring for Agent and Customer WebSocket connections
  * - Quality timeline visualization (60 seconds of history)
  * - VAD-aware indicators showing speaking/silent states
- * - Force reconnect controls
- * - Configuration override sliders
+ * - Configuration override sliders with tooltips
  * - Export health data to JSON
  * - Reconnection history tracking
  * - Raw JSON data inspector
@@ -145,16 +144,22 @@ export class DebugDashboard {
             </div>
 
             <div class="status-badge offline" data-ref="customerBadge">
-              ⚪ Offline
+              ⚪ Not Connected
             </div>
 
             <div class="metric-row">
-              <span class="metric-label">Last Message</span>
+              <span class="metric-label">
+                Last Message
+                <span class="info-icon" title="Time since last WebSocket message received (any type: transcription, translation, or audio). This measures connection liveness, not translation quality.">ℹ️</span>
+              </span>
               <span class="metric-value" data-ref="customerLastMessage">—</span>
             </div>
 
             <div class="metric-row">
-              <span class="metric-label">Threshold</span>
+              <span class="metric-label">
+                Zombie Threshold
+                <span class="info-icon" title="How long we wait without receiving ANY WebSocket message before declaring the connection dead and triggering reconnection.">ℹ️</span>
+              </span>
               <span class="metric-value" data-ref="customerThreshold">—</span>
             </div>
 
@@ -179,13 +184,12 @@ export class DebugDashboard {
             </div>
 
             <div class="quality-timeline-container">
-              <div class="quality-timeline-label">Quality (60s)</div>
+              <div class="quality-timeline-label">
+                Message Freshness History (Last 60 Seconds)
+                <span class="info-icon" title="Shows how recently WebSocket messages were received. Each block = 3 seconds. Green (Healthy) = messages within 3s, Yellow (Slow) = 3-5s gap, Orange (Degrading) = 5-10s gap, Red (Dead) = exceeded zombie threshold, Blue = Reconnecting, Gray = Offline. This measures connection liveness, NOT translation quality or latency.">ℹ️</span>
+              </div>
               <div class="quality-timeline" data-ref="customerTimeline">▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂</div>
             </div>
-
-            <button class="btn btn-reconnect" data-ref="customerReconnectBtn" data-type="customer">
-              Force Reconnect
-            </button>
           </div>
 
           <!-- Agent Card -->
@@ -195,16 +199,22 @@ export class DebugDashboard {
             </div>
 
             <div class="status-badge offline" data-ref="agentBadge">
-              ⚪ Offline
+              ⚪ Not Connected
             </div>
 
             <div class="metric-row">
-              <span class="metric-label">Last Message</span>
+              <span class="metric-label">
+                Last Message
+                <span class="info-icon" title="Time since last WebSocket message received (any type: transcription, translation, or audio). This measures connection liveness, not translation quality.">ℹ️</span>
+              </span>
               <span class="metric-value" data-ref="agentLastMessage">—</span>
             </div>
 
             <div class="metric-row">
-              <span class="metric-label">Threshold</span>
+              <span class="metric-label">
+                Zombie Threshold
+                <span class="info-icon" title="How long we wait without receiving ANY WebSocket message before declaring the connection dead and triggering reconnection.">ℹ️</span>
+              </span>
               <span class="metric-value" data-ref="agentThreshold">—</span>
             </div>
 
@@ -229,13 +239,12 @@ export class DebugDashboard {
             </div>
 
             <div class="quality-timeline-container">
-              <div class="quality-timeline-label">Quality (60s)</div>
+              <div class="quality-timeline-label">
+                Message Freshness History (Last 60 Seconds)
+                <span class="info-icon" title="Shows how recently WebSocket messages were received. Each block = 3 seconds. Green (Healthy) = messages within 3s, Yellow (Slow) = 3-5s gap, Orange (Degrading) = 5-10s gap, Red (Dead) = exceeded zombie threshold, Blue = Reconnecting, Gray = Offline. This measures connection liveness, NOT translation quality or latency.">ℹ️</span>
+              </div>
               <div class="quality-timeline" data-ref="agentTimeline">▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂</div>
             </div>
-
-            <button class="btn btn-reconnect" data-ref="agentReconnectBtn" data-type="agent">
-              Force Reconnect
-            </button>
           </div>
         </div>
 
@@ -245,8 +254,14 @@ export class DebugDashboard {
 
           <div class="config-slider-group">
             <div class="config-slider-label">
-              <span>Speaking Timeout</span>
+              <span>
+                Speaking Timeout
+                <span class="info-icon" title="Zombie detection timeout when user is actively speaking or recently spoke. Lower = faster detection but more false positives.">ℹ️</span>
+              </span>
               <span class="config-slider-value" data-ref="speakingTimeoutValue">10s</span>
+            </div>
+            <div class="config-slider-description">
+              Trigger reconnection if no data received for this duration while speaking (5-30 seconds)
             </div>
             <input
               type="range"
@@ -260,8 +275,14 @@ export class DebugDashboard {
 
           <div class="config-slider-group">
             <div class="config-slider-label">
-              <span>Silent Timeout</span>
+              <span>
+                Silent Timeout
+                <span class="info-icon" title="Zombie detection timeout during silence. Higher = fewer false positives during natural pauses in conversation.">ℹ️</span>
+              </span>
               <span class="config-slider-value" data-ref="silentTimeoutValue">60s</span>
+            </div>
+            <div class="config-slider-description">
+              Trigger reconnection if no data received for this duration while silent (20-120 seconds)
             </div>
             <input
               type="range"
@@ -275,8 +296,14 @@ export class DebugDashboard {
 
           <div class="config-slider-group">
             <div class="config-slider-label">
-              <span>Grace Period</span>
+              <span>
+                Grace Period
+                <span class="info-icon" title="Time after speech ends where fast timeout still applies. Accounts for translation pipeline latency.">ℹ️</span>
+              </span>
               <span class="config-slider-value" data-ref="gracePeriodValue">5s</span>
+            </div>
+            <div class="config-slider-description">
+              Keep using speaking timeout for this duration after speech ends (2-10 seconds)
             </div>
             <input
               type="range"
@@ -342,19 +369,9 @@ export class DebugDashboard {
    * Attach event listeners
    */
   attachEventListeners() {
-    // Toggle collapse/expand
-    this.refs.toggleBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
+    // Toggle collapse/expand - entire header is clickable
+    this.refs.header.addEventListener('click', () => {
       this.toggleCollapsed();
-    });
-
-    // Force reconnect buttons
-    this.refs.customerReconnectBtn.addEventListener('click', () => {
-      this.forceReconnect('customer');
-    });
-
-    this.refs.agentReconnectBtn.addEventListener('click', () => {
-      this.forceReconnect('agent');
     });
 
     // Config sliders
@@ -484,7 +501,6 @@ export class DebugDashboard {
       this.refs[`${prefix}Messages`].textContent = '0';
       this.refs[`${prefix}Errors`].textContent = '0';
       this.refs[`${prefix}Timeline`].textContent = '▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂';
-      this.refs[`${prefix}ReconnectBtn`].disabled = true;
       return;
     }
 
@@ -499,9 +515,9 @@ export class DebugDashboard {
       offline: '⚪'
     };
     const badgeLabels = {
-      good: 'Good',
-      degraded: 'Degraded',
-      poor: 'Poor',
+      good: 'Healthy',
+      degraded: 'Slow',
+      poor: 'Degrading',
       dead: 'Dead',
       reconnecting: 'Reconnecting',
       offline: 'Offline'
@@ -535,26 +551,48 @@ export class DebugDashboard {
 
     // Update quality timeline
     this.updateQualityTimeline(prefix, health.stats?.qualityHistory || []);
-
-    // Update reconnect button
-    const isReconnecting = health.isReconnecting || quality === 'reconnecting';
-    this.refs[`${prefix}ReconnectBtn`].disabled = isReconnecting;
-    this.refs[`${prefix}ReconnectBtn`].textContent = isReconnecting ? 'Reconnecting...' : 'Force Reconnect';
   }
 
   /**
    * Update summary in collapsed header
+   * Simplified: Active (green) vs Dead/Offline (red)
    */
   updateSummary(customerHealth, agentHealth) {
-    // Customer status
+    // Customer status - simplified to Active/Dead/Offline
     const customerQuality = customerHealth?.quality || 'offline';
-    this.refs.customerDot.className = `status-dot ${customerQuality}`;
-    this.refs.customerStatusText.textContent = customerQuality.charAt(0).toUpperCase() + customerQuality.slice(1);
+    const customerSimplified = this.simplifyStatus(customerQuality);
+    this.refs.customerDot.className = `status-dot ${customerSimplified.cssClass}`;
+    this.refs.customerStatusText.textContent = customerSimplified.label;
 
-    // Agent status
+    // Agent status - simplified to Active/Dead/Offline
     const agentQuality = agentHealth?.quality || 'offline';
-    this.refs.agentDot.className = `status-dot ${agentQuality}`;
-    this.refs.agentStatusText.textContent = agentQuality.charAt(0).toUpperCase() + agentQuality.slice(1);
+    const agentSimplified = this.simplifyStatus(agentQuality);
+    this.refs.agentDot.className = `status-dot ${agentSimplified.cssClass}`;
+    this.refs.agentStatusText.textContent = agentSimplified.label;
+  }
+
+  /**
+   * Simplify quality status to binary: Active (green) vs Dead (red)
+   * - good/degraded/poor = "Active" (connection is working)
+   * - dead/reconnecting/offline = "Dead" (connection is broken)
+   */
+  simplifyStatus(quality) {
+    switch (quality) {
+      case 'good':
+      case 'degraded':
+      case 'poor':
+        return { cssClass: 'active', label: 'Active' };
+
+      case 'reconnecting':
+        return { cssClass: 'dead', label: 'Reconnecting' };
+
+      case 'dead':
+        return { cssClass: 'dead', label: 'Dead' };
+
+      case 'offline':
+      default:
+        return { cssClass: 'offline', label: 'Offline' };
+    }
   }
 
   /**
@@ -565,7 +603,7 @@ export class DebugDashboard {
     const blockInterval = 3000; // 3 seconds per block
 
     if (!qualityHistory || qualityHistory.length === 0) {
-      this.refs[`${prefix}Timeline`].textContent = '▂'.repeat(blockCount);
+      this.refs[`${prefix}Timeline`].innerHTML = '<span style="color: #6b7280;">▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂</span>';
       return;
     }
 
@@ -578,6 +616,15 @@ export class DebugDashboard {
       dead: '▄',
       reconnecting: '▃',
       offline: '▂'
+    };
+
+    const colors = {
+      good: '#10b981',       // Green
+      degraded: '#f59e0b',   // Yellow/Amber
+      poor: '#f97316',       // Orange
+      dead: '#ef4444',       // Red
+      reconnecting: '#3b82f6', // Blue
+      offline: '#6b7280'     // Gray
     };
 
     for (let i = 0; i < blockCount; i++) {
@@ -593,10 +640,12 @@ export class DebugDashboard {
         }
       }
 
-      blocks.push(blockChars[quality] || '▂');
+      const char = blockChars[quality] || '▂';
+      const color = colors[quality] || colors.offline;
+      blocks.push(`<span style="color: ${color};">${char}</span>`);
     }
 
-    this.refs[`${prefix}Timeline`].textContent = blocks.join('');
+    this.refs[`${prefix}Timeline`].innerHTML = blocks.join('');
   }
 
   /**
@@ -736,46 +785,6 @@ export class DebugDashboard {
     } else {
       this.refs.inspectorContent.classList.remove('expanded');
       this.refs.inspectorToggle.textContent = '▼ Expand';
-    }
-  }
-
-  /**
-   * Force reconnect for a connection
-   */
-  async forceReconnect(type) {
-    const confirmed = confirm(`Force reconnect ${type}? This will drop audio in progress.`);
-    if (!confirmed) return;
-
-    try {
-      const client = type === 'agent' ? this.options.agentClient : this.options.customerClient;
-      if (!client) {
-        console.error(`${type} client not initialized`);
-        return;
-      }
-
-      console.log(`🔄 Force reconnecting ${type}...`);
-
-      // Store session config if available
-      const sessionConfig = client.sessionConfig;
-
-      // Disconnect
-      if (typeof client.disconnect === 'function') {
-        await client.disconnect();
-      }
-
-      // Wait a bit
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Reconnect if we have session config
-      if (sessionConfig && typeof client.startSession === 'function') {
-        await client.startSession(sessionConfig);
-        console.log(`✅ ${type} reconnected`);
-      } else {
-        console.warn(`⚠️ ${type} disconnected but cannot auto-reconnect (no session config)`);
-      }
-    } catch (error) {
-      console.error(`Error force reconnecting ${type}:`, error);
-      alert(`Failed to reconnect ${type}: ${error.message}`);
     }
   }
 

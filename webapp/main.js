@@ -70,6 +70,15 @@ let customerTranslateToLanguageSearchable;
 let agentTranslateFromLanguageSearchable;
 let agentTranslateToLanguageSearchable;
 
+/**
+ * Display error message to user
+ * @param {string} message - Error message to display
+ */
+function raiseError(message) {
+  console.error(`${LOGGER_PREFIX} - raiseError:`, message);
+  alert(message);
+}
+
 async function getAudioContext() {
   if (AudioContextMgr == null) {
     AudioContextMgr = new AudioContextManager();
@@ -542,14 +551,14 @@ async function onContactDestroyed(contact) {
   clearTranscriptCards();
 }
 
-function onAgentLocalMediaStreamCreated(data) {
+async function onAgentLocalMediaStreamCreated(data) {
   //console.info(`${LOGGER_PREFIX} - onAgentLocalMediaStreamCreated`, data);
   CurrentAgentConnectionId = data.connectionId;
   const session = ConnectSoftPhoneManager?.getSession(CurrentAgentConnectionId);
   const peerConnection = session?._pc;
-  replaceToCustomerAudioStreamManager();
-  replaceToAgentAudioStreamManager();
-  replaceRTCSessionTrackManager(peerConnection);
+  await replaceToCustomerAudioStreamManager();
+  await replaceToAgentAudioStreamManager();
+  await replaceRTCSessionTrackManager(peerConnection);
 }
 
 function setAudioElementsSinkIds() {
@@ -807,6 +816,14 @@ async function agentStartSession(audioLatencyTrackManager) {
 
 async function customerStartStreaming() {
   try {
+    // Ensure audio stream managers are initialized
+    if (!ToCustomerAudioStreamManager) {
+      throw new Error('ToCustomerAudioStreamManager is not initialized');
+    }
+    if (!RTCSessionTrackManager) {
+      throw new Error('RTCSessionTrackManager is not initialized');
+    }
+
     if (CCP_V2V.UI.customerStreamMicCheckbox.checked === true) {
       //we want agent to hear the customer's original voice, so we reduce the fromCustomerAudioElement volume
       CCP_V2V.UI.fromCustomerAudioElement.volume = parseFloat(CCP_V2V.UI.customerStreamMicVolume.value);
@@ -814,7 +831,7 @@ async function customerStartStreaming() {
       //we don't want agent to hear the customer's original voice, so we mute the fromCustomerAudioElement
       CCP_V2V.UI.fromCustomerAudioElement.muted = true;
     }
-  
+
     //Play the audio feedback to customer
     if (CCP_V2V.UI.customerAudioFeedbackEnabledCheckbox.checked === true) {
       ToCustomerAudioStreamManager.enableAudioFeedback(AUDIO_FEEDBACK_FILE_PATH);
@@ -858,6 +875,14 @@ async function agentStartStreaming() {
   try {
     const selectedMic = CCP_V2V.UI.micSelect.value;
     const micConstraints = getMicrophoneConstraints(selectedMic);
+
+    // Ensure audio stream managers are initialized
+    if (!ToCustomerAudioStreamManager) {
+      throw new Error('ToCustomerAudioStreamManager is not initialized');
+    }
+    if (!ToAgentAudioStreamManager) {
+      throw new Error('ToAgentAudioStreamManager is not initialized');
+    }
 
     if (CCP_V2V.UI.agentAudioFeedbackEnabledCheckbox.checked === true) {
       ToAgentAudioStreamManager.enableAudioFeedback(AUDIO_FEEDBACK_FILE_PATH);

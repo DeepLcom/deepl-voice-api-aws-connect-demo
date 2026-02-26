@@ -49,8 +49,8 @@
 }
 
 .debug-dashboard.collapsed {
-  height: 32px;
-  max-height: 32px;
+  height: 44px;
+  max-height: 44px;
   overflow: hidden;
 }
 
@@ -83,17 +83,26 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--spacing-sm) var(--spacing-lg);
+  padding: 12px var(--spacing-lg);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   user-select: none;
   border-bottom: 1px solid transparent;
+  transition: background 0.2s;
+}
+
+.debug-dashboard.collapsed .dashboard-header:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .debug-dashboard.expanded .dashboard-header {
   border-bottom-color: var(--dashboard-border);
   cursor: default;
+}
+
+.debug-dashboard.collapsed .dashboard-header {
+  cursor: pointer;
 }
 
 .dashboard-header-title {
@@ -138,12 +147,16 @@
   display: inline-block;
 }
 
+/* Simplified status indicators */
+.status-dot.active { background: var(--health-good); }
+.status-dot.dead { background: var(--health-dead); }
+.status-dot.offline { background: var(--health-offline); }
+
+/* Detailed statuses (for expanded view) */
 .status-dot.good { background: var(--health-good); }
 .status-dot.degraded { background: var(--health-degraded); }
 .status-dot.poor { background: var(--health-poor); }
-.status-dot.dead { background: var(--health-dead); }
 .status-dot.reconnecting { background: var(--health-reconnecting); animation: pulse 1.5s ease-in-out infinite; }
-.status-dot.offline { background: var(--health-offline); }
 
 /* Dashboard Content */
 .dashboard-content {
@@ -194,12 +207,16 @@
   margin-bottom: var(--spacing-sm);
 }
 
+/* Simplified status badges */
+.status-badge.active { background: var(--health-good); color: white; }
+.status-badge.dead { background: var(--health-dead); color: white; }
+.status-badge.offline { background: var(--health-offline); color: white; }
+
+/* Detailed status badges (for expanded view) */
 .status-badge.good { background: var(--health-good); color: white; }
 .status-badge.degraded { background: var(--health-degraded); color: white; }
 .status-badge.poor { background: var(--health-poor); color: white; }
-.status-badge.dead { background: var(--health-dead); color: white; }
 .status-badge.reconnecting { background: var(--health-reconnecting); color: white; }
-.status-badge.offline { background: var(--health-offline); color: white; }
 
 /* Metrics */
 .metric-row {
@@ -217,6 +234,9 @@
 .metric-label {
   font-size: 12px;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .metric-value {
@@ -262,6 +282,9 @@
   margin-bottom: 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .quality-timeline {
@@ -356,7 +379,7 @@
 
 /* Config Sliders */
 .config-slider-group {
-  margin-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
 }
 
 .config-slider-label {
@@ -364,14 +387,41 @@
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   color: var(--text-secondary);
+}
+
+.config-slider-label > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.config-slider-description {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  line-height: 1.4;
+  font-style: italic;
 }
 
 .config-slider-value {
   font-family: var(--font-mono);
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.info-icon {
+  display: inline-block;
+  cursor: help;
+  font-size: 12px;
+  color: var(--health-reconnecting);
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.info-icon:hover {
+  opacity: 1;
 }
 
 .config-slider {
