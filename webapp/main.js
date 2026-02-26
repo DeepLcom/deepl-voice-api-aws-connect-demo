@@ -153,6 +153,7 @@ const onLoad = async () => {
   getDevices();
   setAudioElementsSinkIds();
   loadTranslateLanguageCodes();
+  loadTranslationFormalities();
   loadVoiceIds();
   setLatencyTrackingUIVisibility();
   initCCP(onConnectInitialized);
@@ -207,6 +208,7 @@ const bindUIElements = () => {
     //Translate Customer UI Elements - New simplified
     customerLanguageSelect: document.getElementById("customerLanguageSelect"),
     customerLanguageSaveButton: document.getElementById("customerLanguageSaveButton"),
+    customerFormalitySelect: document.getElementById("customerFormalitySelect"),
     //Translate Customer UI Elements - Original (hidden)
     customerTranslateFromLanguageSelect: document.getElementById("customerTranslateFromLanguageSelect"),
     customerTranslateToLanguageSelect: document.getElementById("customerTranslateToLanguageSelect"),
@@ -239,6 +241,7 @@ const bindUIElements = () => {
     //Translate Agent UI Elements - New simplified
     agentLanguageSelect: document.getElementById("agentLanguageSelect"),
     agentLanguageSaveButton: document.getElementById("agentLanguageSaveButton"),
+    agentFormalitySelect: document.getElementById("agentFormalitySelect"),
     //Translate Agent UI Elements - Original (hidden)
     agentTranslateFromLanguageSelect: document.getElementById("agentTranslateFromLanguageSelect"),
     agentTranslateToLanguageSelect: document.getElementById("agentTranslateToLanguageSelect"),
@@ -320,6 +323,10 @@ const initEventListeners = () => {
   CCP_V2V.UI.customerTranslateToLanguageSaveButton.addEventListener("click", () => {
     addUpdateLocalStorageKey("customerTranslateToLanguage", CCP_V2V.UI.customerTranslateToLanguageSelect.value);
   });
+  CCP_V2V.UI.customerFormalitySelect.addEventListener("change", async () => {
+    addUpdateLocalStorageKey("customerFormality", CCP_V2V.UI.customerFormalitySelect.value)
+    await reloadConfigs();
+  })
   //Synthesis Customer UI buttons
   CCP_V2V.UI.customerVoiceIdSelect.addEventListener("change", async (e) => {
     addUpdateLocalStorageKey("customerVoiceId", CCP_V2V.UI.customerVoiceIdSelect.value);
@@ -369,6 +376,10 @@ const initEventListeners = () => {
   CCP_V2V.UI.agentTranslateToLanguageSaveButton.addEventListener("click", () => {
     addUpdateLocalStorageKey("agentTranslateToLanguage", CCP_V2V.UI.agentTranslateToLanguageSelect.value);
   });
+  CCP_V2V.UI.agentFormalitySelect.addEventListener("change", async () => {
+    addUpdateLocalStorageKey("agentFormality", CCP_V2V.UI.agentFormalitySelect.value)
+    await reloadConfigs();
+  })
   CCP_V2V.UI.agentVoiceIdSelect.addEventListener("change", async (e) => {
     addUpdateLocalStorageKey("agentVoiceId", CCP_V2V.UI.agentVoiceIdSelect.value);
     if (e.target.value !== "disabled") await reloadConfigs();
@@ -479,6 +490,8 @@ async function onContactConnecting(contact) {
 
   if (customerLanguageSearchable) customerLanguageSearchable.disable();
   if (agentLanguageSearchable) agentLanguageSearchable.disable();
+  CCP_V2V.UI.customerFormalitySelect.disabled = true;
+  CCP_V2V.UI.agentFormalitySelect.disabled = true;
   CCP_V2V.UI.agentVoiceIdSelect.disabled = true;
   CCP_V2V.UI.customerVoiceIdSelect.disabled = true;
 
@@ -495,6 +508,8 @@ async function onContactConnected(contact) {
 
   if (customerLanguageSearchable) customerLanguageSearchable.enable();
   if (agentLanguageSearchable) agentLanguageSearchable.enable();
+  CCP_V2V.UI.customerFormalitySelect.disabled = false;
+  CCP_V2V.UI.agentFormalitySelect.disabled = false;
   CCP_V2V.UI.agentVoiceIdSelect.disabled = false;
   CCP_V2V.UI.customerVoiceIdSelect.disabled = false;
 }
@@ -748,6 +763,7 @@ async function customerStartSession(audioLatencyTrackManager) {
       sourceLanguage: CCP_V2V.UI.customerTranslateFromLanguageSelect.value,
       targetLanguages: [CCP_V2V.UI.customerTranslateToLanguageSelect.value],
       targetMediaLanguages: [CCP_V2V.UI.customerTranslateToLanguageSelect.value],
+      formality: CCP_V2V.UI.customerFormalitySelect.value,
       targetMediaVoice: CCP_V2V.UI.customerVoiceIdSelect.value !== "disabled" ? CCP_V2V.UI.customerVoiceIdSelect.value : "female",
       sourceMediaContentType: "audio/pcm;encoding=s16le;rate=48000",
       targetMediaContentType: "audio/pcm;encoding=s16le;rate=16000",
@@ -772,6 +788,7 @@ async function agentStartSession(audioLatencyTrackManager) {
       targetLanguages: [CCP_V2V.UI.agentTranslateToLanguageSelect.value],
       targetMediaLanguages: [CCP_V2V.UI.agentTranslateToLanguageSelect.value],
       targetMediaVoice: CCP_V2V.UI.agentVoiceIdSelect.value !== "disabled" ? CCP_V2V.UI.agentVoiceIdSelect.value : "female",
+      formality: CCP_V2V.UI.agentFormalitySelect.value,
       sourceMediaContentType: "audio/pcm;encoding=s16le;rate=48000",
       targetMediaContentType: "audio/pcm;encoding=s16le;rate=16000",
     });
@@ -1018,6 +1035,8 @@ async function reloadConfigs() {
 
   if (agentLanguageSearchable) agentLanguageSearchable.disable();
   if (customerLanguageSearchable) customerLanguageSearchable.disable();
+  CCP_V2V.UI.agentFormalitySelect.disabled = true;
+  CCP_V2V.UI.customerFormalitySelect.disabled = true;
   CCP_V2V.UI.agentVoiceIdSelect.disabled = true;
   CCP_V2V.UI.customerVoiceIdSelect.disabled = true;
 
@@ -1032,6 +1051,8 @@ async function reloadConfigs() {
 
   if (agentLanguageSearchable) agentLanguageSearchable.enable();
   if (customerLanguageSearchable) customerLanguageSearchable.enable();
+  CCP_V2V.UI.agentFormalitySelect.disabled = false;
+  CCP_V2V.UI.customerFormalitySelect.disabled = false;
   CCP_V2V.UI.agentVoiceIdSelect.disabled = false;
   CCP_V2V.UI.customerVoiceIdSelect.disabled = false;
 }
@@ -1128,6 +1149,39 @@ function handleAgentSynthesis(data) {
         ToAgentAudioStreamManager.playAudioBuffer(audioContentArrayBufferSecondary, AGENT_TRANSLATION_TO_AGENT_VOLUME);
       }
     }
+  }
+}
+
+function loadTranslationFormalities() {
+  CCP_V2V.UI.customerFormalitySelect.innerHTML = "";
+  CCP_V2V.UI.agentFormalitySelect.innerHTML = "";
+
+  let option = document.createElement("option");
+  option.value = "default";
+  option.textContent = "Language Default";
+  CCP_V2V.UI.customerFormalitySelect.appendChild(option);
+  CCP_V2V.UI.agentFormalitySelect.appendChild(option.cloneNode(true)); 
+
+  option = document.createElement("option");
+  option.value = "formal";
+  option.textContent = "More Formal";
+  CCP_V2V.UI.customerFormalitySelect.appendChild(option);
+  CCP_V2V.UI.agentFormalitySelect.appendChild(option.cloneNode(true));
+
+  option = document.createElement("option");
+  option.value = "informal";
+  option.textContent = "Less Formal";
+  CCP_V2V.UI.customerFormalitySelect.appendChild(option);
+  CCP_V2V.UI.agentFormalitySelect.appendChild(option.cloneNode(true));
+ 
+  const savedCustomerFormality = getLocalStorageValueByKey("customerFormality");
+  if (savedCustomerFormality) {
+    CCP_V2V.UI.customerFormalitySelect.value = savedCustomerFormality;
+  }
+
+  const savedAgentFormality = getLocalStorageValueByKey("agentFormality");
+  if (savedAgentFormality) {
+    CCP_V2V.UI.agentFormalitySelect.value = savedAgentFormality;
   }
 }
 
