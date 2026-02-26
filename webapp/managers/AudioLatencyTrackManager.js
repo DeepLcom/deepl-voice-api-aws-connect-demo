@@ -140,6 +140,14 @@ export class AudioLatencyTrackManager {
         // Update VAD indicator even if latency tracking is disabled, since it's a useful UI feature on its own
         const voiceDetected = this.detectVoice(buffer);
         document.getElementById(c.vadIndicatorId)?.classList.toggle("speaking", voiceDetected);
+
+        // Store VAD state for zombie connection detection
+        if (type === 'customer') {
+            this.customerSpeaking = voiceDetected;
+        } else if (type === 'agent') {
+            this.agentSpeaking = voiceDetected;
+        }
+
         if (!LATENCY_TRACKING_ENABLED) return;
 
         // Calculate actual audio duration of this chunk
@@ -314,6 +322,15 @@ export class AudioLatencyTrackManager {
         const minimumRmsThresholdExceeded = rms > this.vadRmsMinThreshold;
 
         return minimumRmsThresholdExceeded
+    }
+
+    /**
+     * Get current Voice Activity Detection (VAD) state for a specific type
+     * @param {string} type - 'customer' or 'agent'
+     * @returns {boolean} - true if voice is currently detected, false otherwise
+     */
+    isSpeaking(type) {
+        return type === 'customer' ? this.customerSpeaking : this.agentSpeaking;
     }
 
     updateLatencyDisplay(latencyData, elementId) {

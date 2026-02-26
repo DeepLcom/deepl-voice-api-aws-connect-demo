@@ -5,7 +5,7 @@ import "amazon-connect-streams";
 
 import MicrophoneStream from "microphone-stream";
 
-import { getConnectURLS, addUpdateLocalStorageKey, getLocalStorageValueByKey, base64ToArrayBuffer, isStringUndefinedNullEmpty } from "./utils/commonUtility";
+import { getConnectURLS, addUpdateLocalStorageKey, getLocalStorageValueByKey, base64ToArrayBuffer, isStringUndefinedNullEmpty, isDebugMode } from "./utils/commonUtility";
 import {
   AGENT_TRANSLATION_TO_AGENT_VOLUME,
   AUDIO_FEEDBACK_FILE_PATH,
@@ -59,14 +59,25 @@ let DeepLVoiceClientAgent;
 // DeepLVoiceClient to manage the connection and audio streaming with DeepL Voice for Customer
 let DeepLVoiceClientCustomer;
 
-// AudioLatencyTrackManager to manage and calculate latency for different tracks in the app
+// AudioLatencyTrackManager to manage audio latency tracking and VAD state
 let audioLatencyTrackManager;
 
 // SearchableSelect instances for language selection
+let customerLanguageSearchable;
+let agentLanguageSearchable;
 let customerTranslateFromLanguageSearchable;
 let customerTranslateToLanguageSearchable;
 let agentTranslateFromLanguageSearchable;
 let agentTranslateToLanguageSearchable;
+
+/**
+ * Display error message to user
+ * @param {string} message - Error message to display
+ */
+function raiseError(message) {
+  console.error(`${LOGGER_PREFIX} - raiseError:`, message);
+  alert(message);
+}
 
 async function getAudioContext() {
   if (AudioContextMgr == null) {
@@ -154,6 +165,7 @@ const onLoad = async () => {
   getDevices();
   setAudioElementsSinkIds();
   loadTranslateLanguageCodes();
+  loadTranslationFormalities();
   loadVoiceIds();
   setLatencyTrackingUIVisibility();
   initCCP(onConnectInitialized);
@@ -205,7 +217,11 @@ const bindUIElements = () => {
     customerStreamMicVolume: document.getElementById("customerStreamMicVolume"),
     customerStreamTranslationCheckbox: document.getElementById("customerStreamTranslationCheckbox"),
     customerAudioFeedbackEnabledCheckbox: document.getElementById("customerAudioFeedbackEnabledCheckbox"),
-    //Translate Customer UI Elements
+    //Translate Customer UI Elements - New simplified
+    customerLanguageSelect: document.getElementById("customerLanguageSelect"),
+    customerLanguageSaveButton: document.getElementById("customerLanguageSaveButton"),
+    customerFormalitySelect: document.getElementById("customerFormalitySelect"),
+    //Translate Customer UI Elements - Original (hidden)
     customerTranslateFromLanguageSelect: document.getElementById("customerTranslateFromLanguageSelect"),
     customerTranslateToLanguageSelect: document.getElementById("customerTranslateToLanguageSelect"),
     customerTranslateFromLanguageSaveButton: document.getElementById("customerTranslateFromLanguageSaveButton"),
@@ -234,7 +250,11 @@ const bindUIElements = () => {
     agentStreamMicCheckbox: document.getElementById("agentStreamMicCheckbox"),
     agentStreamMicVolume: document.getElementById("agentStreamMicVolume"),
     agentStreamTranslationCheckbox: document.getElementById("agentStreamTranslationCheckbox"),
-    //Translate Agent UI Elements
+    //Translate Agent UI Elements - New simplified
+    agentLanguageSelect: document.getElementById("agentLanguageSelect"),
+    agentLanguageSaveButton: document.getElementById("agentLanguageSaveButton"),
+    agentFormalitySelect: document.getElementById("agentFormalitySelect"),
+    //Translate Agent UI Elements - Original (hidden)
     agentTranslateFromLanguageSelect: document.getElementById("agentTranslateFromLanguageSelect"),
     agentTranslateToLanguageSelect: document.getElementById("agentTranslateToLanguageSelect"),
     agentTranslateFromLanguageSaveButton: document.getElementById("agentTranslateFromLanguageSaveButton"),
@@ -315,7 +335,15 @@ const initEventListeners = () => {
   CCP_V2V.UI.customerTranslateToLanguageSaveButton.addEventListener("click", () => {
     addUpdateLocalStorageKey("customerTranslateToLanguage", CCP_V2V.UI.customerTranslateToLanguageSelect.value);
   });
+  CCP_V2V.UI.customerFormalitySelect.addEventListener("change", async () => {
+    addUpdateLocalStorageKey("customerFormality", CCP_V2V.UI.customerFormalitySelect.value)
+    await reloadConfigs();
+  })
   //Synthesis Customer UI buttons
+  CCP_V2V.UI.customerVoiceIdSelect.addEventListener("change", async (e) => {
+    addUpdateLocalStorageKey("customerVoiceId", CCP_V2V.UI.customerVoiceIdSelect.value);
+    if (e.target.value !== "disabled") await reloadConfigs();
+  })
   CCP_V2V.UI.customerVoiceIdSaveButton.addEventListener("click", () => {
     addUpdateLocalStorageKey("customerVoiceId", CCP_V2V.UI.customerVoiceIdSelect.value);
   });
@@ -360,6 +388,14 @@ const initEventListeners = () => {
   CCP_V2V.UI.agentTranslateToLanguageSaveButton.addEventListener("click", () => {
     addUpdateLocalStorageKey("agentTranslateToLanguage", CCP_V2V.UI.agentTranslateToLanguageSelect.value);
   });
+  CCP_V2V.UI.agentFormalitySelect.addEventListener("change", async () => {
+    addUpdateLocalStorageKey("agentFormality", CCP_V2V.UI.agentFormalitySelect.value)
+    await reloadConfigs();
+  })
+  CCP_V2V.UI.agentVoiceIdSelect.addEventListener("change", async (e) => {
+    addUpdateLocalStorageKey("agentVoiceId", CCP_V2V.UI.agentVoiceIdSelect.value);
+    if (e.target.value !== "disabled") await reloadConfigs();
+  })
   CCP_V2V.UI.agentVoiceIdSaveButton.addEventListener("click", () => {
     addUpdateLocalStorageKey("agentVoiceId", CCP_V2V.UI.agentVoiceIdSelect.value);
   });
@@ -463,7 +499,15 @@ function subscribeToContactEvents() {
 
 async function onContactConnecting(contact) {
   console.info(`${LOGGER_PREFIX} - contact is connecting`, contact);
-  const audioLatencyTrackManager = new AudioLatencyTrackManager();
+
+  if (customerLanguageSearchable) customerLanguageSearchable.disable();
+  if (agentLanguageSearchable) agentLanguageSearchable.disable();
+  CCP_V2V.UI.customerFormalitySelect.disabled = true;
+  CCP_V2V.UI.agentFormalitySelect.disabled = true;
+  CCP_V2V.UI.agentVoiceIdSelect.disabled = true;
+  CCP_V2V.UI.customerVoiceIdSelect.disabled = true;
+
+  audioLatencyTrackManager = new AudioLatencyTrackManager();
   await agentStartSession(audioLatencyTrackManager);
   await customerStartSession(audioLatencyTrackManager);
 }
@@ -473,6 +517,13 @@ async function onContactConnected(contact) {
 
   await agentStartStreaming();
   await customerStartStreaming();
+
+  if (customerLanguageSearchable) customerLanguageSearchable.enable();
+  if (agentLanguageSearchable) agentLanguageSearchable.enable();
+  CCP_V2V.UI.customerFormalitySelect.disabled = false;
+  CCP_V2V.UI.agentFormalitySelect.disabled = false;
+  CCP_V2V.UI.agentVoiceIdSelect.disabled = false;
+  CCP_V2V.UI.customerVoiceIdSelect.disabled = false;
 }
 
 function onContactEnded(contact) {
@@ -500,14 +551,14 @@ async function onContactDestroyed(contact) {
   clearTranscriptCards();
 }
 
-function onAgentLocalMediaStreamCreated(data) {
+async function onAgentLocalMediaStreamCreated(data) {
   //console.info(`${LOGGER_PREFIX} - onAgentLocalMediaStreamCreated`, data);
   CurrentAgentConnectionId = data.connectionId;
   const session = ConnectSoftPhoneManager?.getSession(CurrentAgentConnectionId);
   const peerConnection = session?._pc;
-  replaceToCustomerAudioStreamManager();
-  replaceToAgentAudioStreamManager();
-  replaceRTCSessionTrackManager(peerConnection);
+  await replaceToCustomerAudioStreamManager();
+  await replaceToAgentAudioStreamManager();
+  await replaceRTCSessionTrackManager(peerConnection);
 }
 
 function setAudioElementsSinkIds() {
@@ -719,14 +770,17 @@ async function customerStartSession(audioLatencyTrackManager) {
     onTranslation: handleCustomerTranslateText,
     onAudio: handleCustomerSynthesis,
   });
+  // Expose to window for debugging (can call window.DeepLVoiceClientCustomer.getConnectionHealth() in console)
+  window.DeepLVoiceClientCustomer = DeepLVoiceClientCustomer;
   try {
     await DeepLVoiceClientCustomer.startSession({
       sourceLanguage: CCP_V2V.UI.customerTranslateFromLanguageSelect.value,
       targetLanguages: [CCP_V2V.UI.customerTranslateToLanguageSelect.value],
       targetMediaLanguages: [CCP_V2V.UI.customerTranslateToLanguageSelect.value],
+      formality: CCP_V2V.UI.customerFormalitySelect.value,
+      targetMediaVoice: CCP_V2V.UI.customerVoiceIdSelect.value !== "disabled" ? CCP_V2V.UI.customerVoiceIdSelect.value : "female",
       sourceMediaContentType: "audio/pcm;encoding=s16le;rate=48000",
       targetMediaContentType: "audio/pcm;encoding=s16le;rate=16000",
-      targetMediaVoice: CCP_V2V.UI.customerVoiceIdSelect.value,
     });
   } catch (error) {
     console.error(`${LOGGER_PREFIX} - customerStartSession - Error starting customer session:`, error);
@@ -742,11 +796,15 @@ async function agentStartSession(audioLatencyTrackManager) {
     onTranslation: handleAgentTranslateText,
     onAudio: handleAgentSynthesis,
   });
+  // Expose to window for debugging (can call window.DeepLVoiceClientAgent.getConnectionHealth() in console)
+  window.DeepLVoiceClientAgent = DeepLVoiceClientAgent;
   try {
     await DeepLVoiceClientAgent.startSession({
       sourceLanguage: CCP_V2V.UI.agentTranslateFromLanguageSelect.value,
       targetLanguages: [CCP_V2V.UI.agentTranslateToLanguageSelect.value],
       targetMediaLanguages: [CCP_V2V.UI.agentTranslateToLanguageSelect.value],
+      targetMediaVoice: CCP_V2V.UI.agentVoiceIdSelect.value !== "disabled" ? CCP_V2V.UI.agentVoiceIdSelect.value : "female",
+      formality: CCP_V2V.UI.agentFormalitySelect.value,
       sourceMediaContentType: "audio/pcm;encoding=s16le;rate=48000",
       targetMediaContentType: "audio/pcm;encoding=s16le;rate=16000",
     });
@@ -758,6 +816,14 @@ async function agentStartSession(audioLatencyTrackManager) {
 
 async function customerStartStreaming() {
   try {
+    // Ensure audio stream managers are initialized
+    if (!ToCustomerAudioStreamManager) {
+      throw new Error('ToCustomerAudioStreamManager is not initialized');
+    }
+    if (!RTCSessionTrackManager) {
+      throw new Error('RTCSessionTrackManager is not initialized');
+    }
+
     if (CCP_V2V.UI.customerStreamMicCheckbox.checked === true) {
       //we want agent to hear the customer's original voice, so we reduce the fromCustomerAudioElement volume
       CCP_V2V.UI.fromCustomerAudioElement.volume = parseFloat(CCP_V2V.UI.customerStreamMicVolume.value);
@@ -765,7 +831,7 @@ async function customerStartStreaming() {
       //we don't want agent to hear the customer's original voice, so we mute the fromCustomerAudioElement
       CCP_V2V.UI.fromCustomerAudioElement.muted = true;
     }
-  
+
     //Play the audio feedback to customer
     if (CCP_V2V.UI.customerAudioFeedbackEnabledCheckbox.checked === true) {
       ToCustomerAudioStreamManager.enableAudioFeedback(AUDIO_FEEDBACK_FILE_PATH);
@@ -803,21 +869,20 @@ async function customerStopStreaming() {
     DeepLVoiceClientCustomer.disconnect();
     DeepLVoiceClientCustomer = null;
   }
-
-  if (audioLatencyTrackManager) {
-    audioLatencyTrackManager.resetLatencyTracking("customer");
-    audioLatencyTrackManager.dispose();
-    audioLatencyTrackManager = null;
-  }
-
-  //un-mute the audio element
-  CCP_V2V.UI.fromCustomerAudioElement.muted = false;
 }
 
 async function agentStartStreaming() {
   try {
     const selectedMic = CCP_V2V.UI.micSelect.value;
     const micConstraints = getMicrophoneConstraints(selectedMic);
+
+    // Ensure audio stream managers are initialized
+    if (!ToCustomerAudioStreamManager) {
+      throw new Error('ToCustomerAudioStreamManager is not initialized');
+    }
+    if (!ToAgentAudioStreamManager) {
+      throw new Error('ToAgentAudioStreamManager is not initialized');
+    }
 
     if (CCP_V2V.UI.agentAudioFeedbackEnabledCheckbox.checked === true) {
       ToAgentAudioStreamManager.enableAudioFeedback(AUDIO_FEEDBACK_FILE_PATH);
@@ -866,12 +931,6 @@ async function agentStopStreaming() {
     DeepLVoiceClientAgent = null;
   }
 
-  if (audioLatencyTrackManager) {
-    audioLatencyTrackManager.resetLatencyTracking("agent");
-    audioLatencyTrackManager.dispose();
-    audioLatencyTrackManager = null;
-  }
-
   enableMicrophoneAndSpeakerSelection();
 }
 
@@ -910,11 +969,21 @@ async function loadTranslateLanguageCodes() {
     return [];
   });
   console.log(`${LOGGER_PREFIX} - loadTranslateLanguageCodes - DeepL Translate From Languages:`, deepLTranslateFromLanguages);
+
+  // Populate new simplified language selects
   deepLTranslateFromLanguages.forEach((language) => {
     const option = document.createElement("option");
     option.value = language.language;
     option.textContent = language.name;
+    CCP_V2V.UI.customerLanguageSelect.appendChild(option.cloneNode(true));
+    CCP_V2V.UI.agentLanguageSelect.appendChild(option.cloneNode(true));
+  });
 
+  // Populate hidden legacy selects (for backward compatibility)
+  deepLTranslateFromLanguages.forEach((language) => {
+    const option = document.createElement("option");
+    option.value = language.language;
+    option.textContent = language.name;
     CCP_V2V.UI.customerTranslateFromLanguageSelect.appendChild(option);
     CCP_V2V.UI.agentTranslateFromLanguageSelect.appendChild(option.cloneNode(true));
   });
@@ -923,64 +992,101 @@ async function loadTranslateLanguageCodes() {
     const option = document.createElement("option");
     option.value = language.language;
     option.textContent = language.name;
-
     CCP_V2V.UI.customerTranslateToLanguageSelect.appendChild(option.cloneNode(true));
     CCP_V2V.UI.agentTranslateToLanguageSelect.appendChild(option.cloneNode(true));
   });
-  //set en as default
-  CCP_V2V.UI.customerTranslateFromLanguageSelect.value = "EN";
-  CCP_V2V.UI.customerTranslateToLanguageSelect.value = "ES";
+  //set en as default for customer, es for agent
+  const defaultCustomerLang = "en";
+  const defaultAgentLang = "es";
 
-  CCP_V2V.UI.agentTranslateFromLanguageSelect.value = "EN";
-  CCP_V2V.UI.agentTranslateToLanguageSelect.value = "ES";
+  CCP_V2V.UI.customerLanguageSelect.value = defaultCustomerLang;
+  CCP_V2V.UI.agentLanguageSelect.value = defaultAgentLang;
 
-  //pre-select saved translateFromLanguage
-  const savedCustomerTranslateFromLanguage = getLocalStorageValueByKey("customerTranslateFromLanguage");
-  if (savedCustomerTranslateFromLanguage) {
-    CCP_V2V.UI.customerTranslateFromLanguageSelect.value = savedCustomerTranslateFromLanguage;
+  //pre-select saved languages (for new simplified selects)
+  const savedCustomerLanguage = getLocalStorageValueByKey("customerLanguage");
+  const savedAgentLanguage = getLocalStorageValueByKey("agentLanguage");
+
+  if (savedCustomerLanguage) {
+    CCP_V2V.UI.customerLanguageSelect.value = savedCustomerLanguage;
+  }
+  if (savedAgentLanguage) {
+    CCP_V2V.UI.agentLanguageSelect.value = savedAgentLanguage;
   }
 
-  const savedAgentTranslateFromLanguage = getLocalStorageValueByKey("agentTranslateFromLanguage");
-  if (savedAgentTranslateFromLanguage) {
-    CCP_V2V.UI.agentTranslateFromLanguageSelect.value = savedAgentTranslateFromLanguage;
-  }
+  // Sync simplified selects to hidden legacy selects
+  const syncLanguages = () => {
+    const customerLang = CCP_V2V.UI.customerLanguageSelect.value;
+    const agentLang = CCP_V2V.UI.agentLanguageSelect.value;
 
-  //pre-select saved translateToLanguage
-  const savedCustomerTranslateToLanguage = getLocalStorageValueByKey("customerTranslateToLanguage");
-  if (savedCustomerTranslateToLanguage) {
-    CCP_V2V.UI.customerTranslateToLanguageSelect.value = savedCustomerTranslateToLanguage;
-  }
+    // Customer speaks customerLang, wants to hear agentLang
+    CCP_V2V.UI.customerTranslateFromLanguageSelect.value = customerLang;
+    CCP_V2V.UI.customerTranslateToLanguageSelect.value = agentLang;
 
-  const savedAgentTranslateToLanguage = getLocalStorageValueByKey("agentTranslateToLanguage");
-  if (savedAgentTranslateToLanguage) {
-    CCP_V2V.UI.agentTranslateToLanguageSelect.value = savedAgentTranslateToLanguage;
-  }
+    // Agent speaks agentLang, wants to hear customerLang
+    CCP_V2V.UI.agentTranslateFromLanguageSelect.value = agentLang;
+    CCP_V2V.UI.agentTranslateToLanguageSelect.value = customerLang;
+  };
 
-  // Initialize SearchableSelect for all language dropdowns
+  // Initial sync
+  syncLanguages();
+
+  // Initialize SearchableSelect for new simplified language dropdowns
+  customerLanguageSearchable = new SearchableSelect(CCP_V2V.UI.customerLanguageSelect);
+  agentLanguageSearchable = new SearchableSelect(CCP_V2V.UI.agentLanguageSelect);
+
+  // Initialize SearchableSelect for hidden legacy dropdowns (still needed for the backend)
   customerTranslateFromLanguageSearchable = new SearchableSelect(CCP_V2V.UI.customerTranslateFromLanguageSelect);
   customerTranslateToLanguageSearchable = new SearchableSelect(CCP_V2V.UI.customerTranslateToLanguageSelect);
   agentTranslateFromLanguageSearchable = new SearchableSelect(CCP_V2V.UI.agentTranslateFromLanguageSelect);
   agentTranslateToLanguageSearchable = new SearchableSelect(CCP_V2V.UI.agentTranslateToLanguageSelect);
 
   // Explicitly set the saved values to ensure they display correctly
-  if (savedCustomerTranslateFromLanguage) {
-    customerTranslateFromLanguageSearchable.setValue(savedCustomerTranslateFromLanguage);
+  if (savedCustomerLanguage) {
+    customerLanguageSearchable.setValue(savedCustomerLanguage);
   }
-  if (savedCustomerTranslateToLanguage) {
-    customerTranslateToLanguageSearchable.setValue(savedCustomerTranslateToLanguage);
-  }
-  if (savedAgentTranslateFromLanguage) {
-    agentTranslateFromLanguageSearchable.setValue(savedAgentTranslateFromLanguage);
-  }
-  if (savedAgentTranslateToLanguage) {
-    agentTranslateToLanguageSearchable.setValue(savedAgentTranslateToLanguage);
+  if (savedAgentLanguage) {
+    agentLanguageSearchable.setValue(savedAgentLanguage);
   }
 
-  // Hide the Save buttons since we now auto-save on selection
-  CCP_V2V.UI.customerTranslateFromLanguageSaveButton.style.display = 'none';
-  CCP_V2V.UI.customerTranslateToLanguageSaveButton.style.display = 'none';
-  CCP_V2V.UI.agentTranslateFromLanguageSaveButton.style.display = 'none';
-  CCP_V2V.UI.agentTranslateToLanguageSaveButton.style.display = 'none';
+  // Add change listeners to sync languages when user changes selection
+  CCP_V2V.UI.customerLanguageSelect.addEventListener('change', async () => {
+    syncLanguages();
+    window.localStorage.setItem('customerLanguage', CCP_V2V.UI.customerLanguageSelect.value);
+    await reloadConfigs();
+  });
+
+  CCP_V2V.UI.agentLanguageSelect.addEventListener('change', async () => {
+    syncLanguages();
+    window.localStorage.setItem('agentLanguage', CCP_V2V.UI.agentLanguageSelect.value);
+    await reloadConfigs();
+  });
+}
+
+async function reloadConfigs() {
+  if (!RTCSessionTrackManager) return;
+
+  if (agentLanguageSearchable) agentLanguageSearchable.disable();
+  if (customerLanguageSearchable) customerLanguageSearchable.disable();
+  CCP_V2V.UI.agentFormalitySelect.disabled = true;
+  CCP_V2V.UI.customerFormalitySelect.disabled = true;
+  CCP_V2V.UI.agentVoiceIdSelect.disabled = true;
+  CCP_V2V.UI.customerVoiceIdSelect.disabled = true;
+
+  await agentStopStreaming();
+  await customerStopStreaming();
+
+  audioLatencyTrackManager = new AudioLatencyTrackManager();
+  await agentStartSession(audioLatencyTrackManager);
+  await agentStartStreaming();
+  await customerStartSession(audioLatencyTrackManager);
+  await customerStartStreaming();
+
+  if (agentLanguageSearchable) agentLanguageSearchable.enable();
+  if (customerLanguageSearchable) customerLanguageSearchable.enable();
+  CCP_V2V.UI.agentFormalitySelect.disabled = false;
+  CCP_V2V.UI.customerFormalitySelect.disabled = false;
+  CCP_V2V.UI.agentVoiceIdSelect.disabled = false;
+  CCP_V2V.UI.customerVoiceIdSelect.disabled = false;
 }
 
 async function handleCustomerTranscript(text) {
@@ -1041,7 +1147,7 @@ async function handleAgentTranscript(text) {
 }
 
 async function handleCustomerSynthesis(data) {
-  if (!data) return;
+  if (!data || !CCP_V2V.UI.customerVoiceIdSelect.value) return;
   for (let i = 0; i < data.length; i++) {
     //Play Customer Speech to Agent
     let audioContentArrayBufferPrimary = base64ToArrayBuffer(data[i]);
@@ -1060,7 +1166,7 @@ async function handleCustomerSynthesis(data) {
 }
 
 function handleAgentSynthesis(data) {
-  if (!data) return;
+  if (!data || !CCP_V2V.UI.agentVoiceIdSelect.value) return;
   for (let i = 0; i < data.length; i++) {
     //Play Agent Speech to Customer
     const audioContentArrayBufferPrimary = base64ToArrayBuffer(data[i]);
@@ -1078,17 +1184,58 @@ function handleAgentSynthesis(data) {
   }
 }
 
+function loadTranslationFormalities() {
+  CCP_V2V.UI.customerFormalitySelect.innerHTML = "";
+  CCP_V2V.UI.agentFormalitySelect.innerHTML = "";
+
+  let option = document.createElement("option");
+  option.value = "default";
+  option.textContent = "Language Default";
+  CCP_V2V.UI.customerFormalitySelect.appendChild(option);
+  CCP_V2V.UI.agentFormalitySelect.appendChild(option.cloneNode(true)); 
+
+  option = document.createElement("option");
+  option.value = "formal";
+  option.textContent = "More Formal";
+  CCP_V2V.UI.customerFormalitySelect.appendChild(option);
+  CCP_V2V.UI.agentFormalitySelect.appendChild(option.cloneNode(true));
+
+  option = document.createElement("option");
+  option.value = "informal";
+  option.textContent = "Less Formal";
+  CCP_V2V.UI.customerFormalitySelect.appendChild(option);
+  CCP_V2V.UI.agentFormalitySelect.appendChild(option.cloneNode(true));
+ 
+  const savedCustomerFormality = getLocalStorageValueByKey("customerFormality");
+  if (savedCustomerFormality) {
+    CCP_V2V.UI.customerFormalitySelect.value = savedCustomerFormality;
+  }
+
+  const savedAgentFormality = getLocalStorageValueByKey("agentFormality");
+  if (savedAgentFormality) {
+    CCP_V2V.UI.agentFormalitySelect.value = savedAgentFormality;
+  }
+}
+
 function loadVoiceIds() {
   CCP_V2V.UI.customerVoiceIdSelect.innerHTML = "";
   CCP_V2V.UI.agentVoiceIdSelect.innerHTML = "";
+
   let option = document.createElement("option");
   option.value = "female";
   option.textContent = "Female";
   CCP_V2V.UI.customerVoiceIdSelect.appendChild(option);
   CCP_V2V.UI.agentVoiceIdSelect.appendChild(option.cloneNode(true));
+
   option = document.createElement("option");
   option.value = "male";
   option.textContent = "Male";
+  CCP_V2V.UI.customerVoiceIdSelect.appendChild(option);
+  CCP_V2V.UI.agentVoiceIdSelect.appendChild(option.cloneNode(true));
+
+  option = document.createElement("option");
+  option.value = "disabled";
+  option.textContent = "Speech Off";
   CCP_V2V.UI.customerVoiceIdSelect.appendChild(option);
   CCP_V2V.UI.agentVoiceIdSelect.appendChild(option.cloneNode(true));  
 
@@ -1217,4 +1364,63 @@ function disableMicrophoneAndSpeakerSelection() {
   CCP_V2V.UI.echoCancellationCheckbox.disabled = true;
   CCP_V2V.UI.noiseSuppressionCheckbox.disabled = true;
   CCP_V2V.UI.autoGainControlCheckbox.disabled = true;
+}
+
+// =============================================================================
+// DEBUG DASHBOARD INITIALIZATION
+// =============================================================================
+
+/**
+ * Initialize Debug Dashboard when ?debug=true URL parameter is present.
+ * The dashboard dynamically loads only in debug mode to avoid production bundle impact.
+ *
+ * Features:
+ * - Real-time WebSocket health monitoring for Agent and Customer connections
+ * - Quality timeline visualization (60 seconds)
+ * - VAD-aware indicators
+ * - Force reconnect controls
+ * - Configuration overrides
+ * - Export health data
+ * - Reconnection history
+ *
+ * Usage:
+ * 1. Add ?debug=true to URL
+ * 2. Dashboard appears at bottom of screen (collapsed by default)
+ * 3. Access via console: window.debugDashboard
+ */
+if (isDebugMode()) {
+  console.log('🔧 Debug mode enabled - loading health dashboard...');
+
+  // Wait for DOM to be ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDebugDashboard);
+  } else {
+    initDebugDashboard();
+  }
+}
+
+function initDebugDashboard() {
+  // Dynamic import to avoid bundling in production
+  import('./components/DebugDashboard.js').then(module => {
+    const DebugDashboard = module.DebugDashboard;
+
+    // Create dashboard instance with getter functions
+    // This allows the dashboard to access clients dynamically as they're created/destroyed
+    const dashboard = new DebugDashboard({
+      get agentClient() { return window.DeepLVoiceClientAgent; },
+      get customerClient() { return window.DeepLVoiceClientCustomer; },
+      get audioLatencyTrackManager() { return audioLatencyTrackManager; },
+    });
+
+    // Mount to body
+    dashboard.mount(document.body);
+
+    // Expose to window for console debugging
+    window.debugDashboard = dashboard;
+
+    console.log('✅ Debug dashboard loaded successfully');
+    console.log('💡 Access via: window.debugDashboard');
+  }).catch(error => {
+    console.error('❌ Failed to load debug dashboard:', error);
+  });
 }

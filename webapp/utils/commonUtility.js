@@ -130,3 +130,12 @@ export function isDevEnvironment() {
   }
   return false;
 }
+
+/**
+ * Check if debug mode is enabled via URL parameter (?debug=true)
+ * @returns {boolean} - true if ?debug=true is present in URL
+ */
+export function isDebugMode() {
+  const debugParam = getQueryStringValueByKey('debug');
+  return debugParam === 'true';
+}

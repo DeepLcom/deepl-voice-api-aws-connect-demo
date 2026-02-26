@@ -1,16 +1,14 @@
 import { getTranscribeAudioStream } from "../utils/transcribeUtils";
-import {
-  LATENCY_TRACKING_ENABLED,
-  PIPELINE_LATENCY_MAX_MS_GOOD,
-  PIPELINE_LATENCY_MAX_MS_OK
-} from "../constants";
+import { SUPPORTED_SOURCE_LANGUAGES, SUPPORTED_TARGET_LANGUAGES } from "../supportedLanguages.js";
+import { ConnectionHealthMonitor } from "../managers/ConnectionHealthMonitor.js";
+
 
 class DeepLVoiceClient {
   constructor(options = {}) {
     this.type = options.type; // "agent" or "customer"
     this.baseUrl = options.baseUrl || "https://api.deepl.com";
-    this.getLanguagesProxy = options.getLanguagesProxy || import.meta.env.VITE_GET_LANGUAGES_PROXY ||"https://2zvm3hfyunpfl6ot5f6ni3sysu0dwqbz.lambda-url.us-west-1.on.aws/"
-    this.requestSessionProxy = options.requestSessionProxy || import.meta.env.VITE_REQUEST_SESSION_PROXY || "https://vgs3633jo7wnecrlizbe2v6aja0lrron.lambda-url.us-west-1.on.aws/";
+    this.getLanguagesProxy = options.getLanguagesProxy || import.meta.env.VITE_GET_LANGUAGES_PROXY || "https://wjjabkvfyvqxqpizezx7jdsqny0hrpsa.lambda-url.eu-west-2.on.aws/"
+    this.requestSessionProxy = options.requestSessionProxy || import.meta.env.VITE_REQUEST_SESSION_PROXY || "https://uexiwsmey6vz43rr3szwu6udeq0jotax.lambda-url.eu-west-2.on.aws/";
     
     this.ws = null;
     this.streamingUrl = null;
@@ -18,6 +16,7 @@ class DeepLVoiceClient {
     this.sessionConfig = null;
     this.shouldReconnect = true;
     this.isConnected = false;
+    this.isReconnecting = false; // Guard flag to prevent duplicate reconnections
     
     // Event handlers
     this.onTranscription = options.onTranscription || null;
@@ -42,32 +41,52 @@ class DeepLVoiceClient {
       audioSynthesis: [],     // Translation text → Synthesized audio (NEW)
     };
     this.audioLatencyTrackManager = options.audioLatencyTrackManager;
+
+    // Connection health monitoring with VAD-aware zombie detection
+    this.healthMonitor = new ConnectionHealthMonitor({
+      type: this.type,
+      audioLatencyTrackManager: this.audioLatencyTrackManager, // For VAD state
+      onQualityChange: (newQuality, oldQuality) => {
+        // Only log significant state changes (not degraded/poor transitions)
+        const significantStates = ['dead', 'reconnecting', 'offline'];
+        if (significantStates.includes(newQuality) || significantStates.includes(oldQuality)) {
+          console.log(`${this.type} connection: ${oldQuality} → ${newQuality}`);
+        }
+      },
+      onReconnectNeeded: () => {
+        this._handleReconnection();
+      }
+    });
   }
 
   async getLanguages(type = "source") {
-    try {
-      const response = await fetch(this.getLanguagesProxy, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({ type }),
-      });
+    // Return hard-coded supported languages from config
+    return type === "source" ? SUPPORTED_SOURCE_LANGUAGES : SUPPORTED_TARGET_LANGUAGES;
 
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(`Get languages failed: ${response.status} - ${error.message || response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      if (this.onError) {
-        this.onError(error);
-      }
-      throw error;
-    }
+    // Lambda proxy code (commented out - uncomment to fetch from API)
+    // try {
+    //   const response = await fetch(this.getLanguagesProxy, {
+    //     method: 'POST',
+    //     headers: {
+    //       'Content-Type': 'application/json',
+    //       'Accept': 'application/json',
+    //     },
+    //     body: JSON.stringify({ type }),
+    //   });
+    //
+    //   if (!response.ok) {
+    //     const error = await response.json().catch(() => ({}));
+    //     throw new Error(`Get languages failed: ${response.status} - ${error.message || response.statusText}`);
+    //   }
+    //
+    //   const data = await response.json();
+    //   return data;
+    // } catch (error) {
+    //   if (this.onError) {
+    //     this.onError(error);
+    //   }
+    //   throw error;
+    // }
   }
 
   /**
@@ -80,7 +99,8 @@ class DeepLVoiceClient {
    * @param {string} config.sourceLanguageMode - 'auto' for auto-detection or 'fixed' for specific language code
    * @param {string} config.sourceMediaContentType - Audio format (e.g., 'audio/l16;rate=16000', 'audio/opus', 'audio/webm;codecs=opus')
    * @param {string} config.targetMediaContentType - Desired output audio format (e.g., 'audio/l16;rate=16000', 'audio/opus', 'audio/webm;codecs=opus')
-   * @param {string} [config.targetMediaVoice] - Optional desired voice for TTS output (e.g., 'female1', 'male1')
+   * @param {string} [config.targetMediaVoice] - Optional desired voice for TTS output (e.g., 'female', 'male')
+   * @param {string} config.formality - Optional desired translation formality (formal, informal, default)
    * @param {string[]} [config.glossaryIds] - Optional array of glossary IDs
    * @param {boolean} [config.enableTranscription=true] - Enable source transcription
    * @returns {Promise<Object>} Session details with streaming_url and token
@@ -155,29 +175,39 @@ class DeepLVoiceClient {
   async connect(streamingUrl, token) {
     return new Promise((resolve, reject) => {
       const wsUrl = `${streamingUrl}?token=${token}`;
-      
+
       this.ws = new WebSocket(wsUrl);
       this.ws.onopen = () => {
-        console.log('WebSocket connection established');
+        console.log('✅ WebSocket connection established');
         this.isConnected = true;
+
+        // Start health monitoring
+        this.healthMonitor.start();
 
         if (this.onConnect) {
           this.onConnect();
         }
         resolve();
       };
-      
+
       this.ws.onmessage = (event) => {
+        // Record message received for health monitoring
+        this.healthMonitor.recordMessage();
         this.handleMessage(event.data);
       };
-      
+
       this.ws.onerror = (error) => {
         console.error('❌ WebSocket error:', error);
+        // Record error for health monitoring
+        this.healthMonitor.recordError();
       };
-      
+
       this.ws.onclose = (event) => {
-        console.log('🔴 WebSocket closed: ', event.reason);
+        console.log('🔴 WebSocket closed:', event.reason);
         this.isConnected = false;
+
+        // Stop health monitoring
+        this.healthMonitor.stop();
 
         if (this.onDisconnect) {
           this.onDisconnect(event);
@@ -193,11 +223,31 @@ class DeepLVoiceClient {
     console.log('Disconnecting...');
     this.isConnected = false;
     this.shouldReconnect = false;
+
+    // Stop health monitoring
+    this.healthMonitor.stop();
+
     if (this.ws) {
       // Set flag to prevent auto-reconnect
       this.ws.close();
       this.ws = null;
     }
+  }
+
+  /**
+   * Get connection health metrics
+   * @returns {Object} - Health data
+   */
+  getConnectionHealth() {
+    return this.healthMonitor.getHealth();
+  }
+
+  /**
+   * Update health monitoring configuration
+   * @param {Object} config - Partial configuration to update
+   */
+  updateHealthConfig(config) {
+    this.healthMonitor.updateConfig(config);
   }
 
   handleMessage(data) {
@@ -244,12 +294,11 @@ class DeepLVoiceClient {
       }
       else if (message.target_media_chunk) {
         const update = message.target_media_chunk;
+        const data = update.data;
         
-        if (update.data && update.data.length > 0) {
+        if (data && data.length > 0) {
+          console.log(`${this.type} target media chunk update: ${data.length} bytes`);
           if (this.onAudio) {
-              const targetMediaChunk = message.target_media_chunk;
-              const data = targetMediaChunk.data;
-              console.log(`${this.type} target media chunk update: ${data.length} bytes`);
               this.onAudio(data);
           }
           this.audioLatencyTrackManager.enqueueSynthesis(this.type, receiveTime);
@@ -270,14 +319,13 @@ class DeepLVoiceClient {
           this.onStreamEnd();
         }
       }
-      else if (message.error) { 
+      else if (message.error) {
         if (this.onError) {
           this.onError(new Error(message.error));
-          // close and restart the session
-          this.disconnect();
-          this.startSession(this.sessionConfig).catch(error => {
-              console.error('Failed to restart session after error:', error);
-          });
+          // Trigger reconnection through health monitor (with backoff)
+          if (!this.isReconnecting) {
+            this._handleReconnection();
+          }
         }
       }
       else {
@@ -322,17 +370,11 @@ class DeepLVoiceClient {
   }
 
   sendAudio(audioBuffer) {
-    if (!this.isConnected) {
-      if (this.shouldReconnect) {
-        console.warn('WebSocket not connected, attempting to start new session...');
-        this.audioLatencyTrackManager.resetLatencyTracking(this.type);
-        this.startSession(this.sessionConfig).catch(error => {
-            console.error('Failed to start new session during sendAudio:', error);
-        });
-      }
+    // Drop audio chunks if not connected or WebSocket is null (e.g., during reconnection)
+    if (!this.isConnected || !this.ws) {
       return;
     }
-    
+
     try {
         const base64Audio = audioBuffer.toString('base64');
         const payload = JSON.stringify({
@@ -348,7 +390,7 @@ class DeepLVoiceClient {
 
   // Signal end of audio stream
   endAudio() {
-    if (!this.isConnected) {
+    if (!this.isConnected || !this.ws) {
         return;
     }
     console.log('Signaling end of audio stream');
@@ -380,12 +422,76 @@ class DeepLVoiceClient {
 
   /**
    * Reconnect to an existing session
-   * 
+   *
    * @returns {Promise<void>}
    */
   async reconnect() {
     const session = await this.requestReconnection();
     await this.connect(session.streaming_url, session.token);
+  }
+
+  /**
+   * Handle automatic reconnection when connection is dead
+   * @private
+   */
+  async _handleReconnection() {
+    if (!this.shouldReconnect) {
+      console.log(`🔄 Auto-reconnection disabled for ${this.type}, skipping`);
+      return;
+    }
+
+    // Set guard flag to prevent duplicate reconnections
+    this.isReconnecting = true;
+
+    // Mark as reconnecting
+    this.healthMonitor.startReconnecting();
+
+    // Close zombie connection
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+
+    // Calculate backoff
+    const backoffMs = this.healthMonitor.getNextBackoff();
+
+    console.log(`🔄 ${this.type} reconnecting in ${backoffMs}ms...`);
+
+    // Wait for backoff
+    await new Promise(resolve => setTimeout(resolve, backoffMs));
+
+    try {
+      console.log(`🔄 Attempting reconnection for ${this.type}...`);
+
+      // Reset latency tracking for new connection
+      if (this.audioLatencyTrackManager) {
+        this.audioLatencyTrackManager.resetLatencyTracking(this.type);
+      }
+
+      // Start new session
+      await this.startSession(this.sessionConfig);
+
+      // Success!
+      console.log(`✅ ${this.type} reconnected successfully`);
+      this.healthMonitor.reconnectionSucceeded();
+      this.isReconnecting = false; // Clear guard flag
+
+    } catch (error) {
+      console.error(`❌ ${this.type} reconnection failed:`, error);
+
+      // Check if we should keep trying
+      const keepTrying = this.healthMonitor.reconnectionFailed();
+
+      if (keepTrying && this.shouldReconnect) {
+        console.log(`🔄 Retrying ${this.type} reconnection...`);
+        // Recursively try again (will use new backoff)
+        // Note: isReconnecting stays true for retry
+        this._handleReconnection();
+      } else {
+        console.error(`❌ ${this.type} giving up after ${this.healthMonitor.reconnectAttempts} attempts`);
+        this.isReconnecting = false; // Clear guard flag
+      }
+    }
   }
 }
 
