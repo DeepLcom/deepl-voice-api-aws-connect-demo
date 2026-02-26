@@ -758,6 +758,8 @@ async function customerStartSession(audioLatencyTrackManager) {
     onTranslation: handleCustomerTranslateText,
     onAudio: handleCustomerSynthesis,
   });
+  // Expose to window for debugging (can call window.DeepLVoiceClientCustomer.getConnectionHealth() in console)
+  window.DeepLVoiceClientCustomer = DeepLVoiceClientCustomer;
   try {
     await DeepLVoiceClientCustomer.startSession({
       sourceLanguage: CCP_V2V.UI.customerTranslateFromLanguageSelect.value,
@@ -782,6 +784,8 @@ async function agentStartSession(audioLatencyTrackManager) {
     onTranslation: handleAgentTranslateText,
     onAudio: handleAgentSynthesis,
   });
+  // Expose to window for debugging (can call window.DeepLVoiceClientAgent.getConnectionHealth() in console)
+  window.DeepLVoiceClientAgent = DeepLVoiceClientAgent;
   try {
     await DeepLVoiceClientAgent.startSession({
       sourceLanguage: CCP_V2V.UI.agentTranslateFromLanguageSelect.value,

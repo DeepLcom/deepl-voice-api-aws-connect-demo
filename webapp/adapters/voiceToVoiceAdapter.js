@@ -1,5 +1,6 @@
 import { getTranscribeAudioStream } from "../utils/transcribeUtils";
 import { SUPPORTED_SOURCE_LANGUAGES, SUPPORTED_TARGET_LANGUAGES } from "../supportedLanguages.js";
+import { ConnectionHealthMonitor } from "../managers/ConnectionHealthMonitor.js";
 
 
 class DeepLVoiceClient {
@@ -15,6 +16,7 @@ class DeepLVoiceClient {
     this.sessionConfig = null;
     this.shouldReconnect = true;
     this.isConnected = false;
+    this.isReconnecting = false; // Guard flag to prevent duplicate reconnections
     
     // Event handlers
     this.onTranscription = options.onTranscription || null;
@@ -39,6 +41,22 @@ class DeepLVoiceClient {
       audioSynthesis: [],     // Translation text → Synthesized audio (NEW)
     };
     this.audioLatencyTrackManager = options.audioLatencyTrackManager;
+
+    // Connection health monitoring with VAD-aware zombie detection
+    this.healthMonitor = new ConnectionHealthMonitor({
+      type: this.type,
+      audioLatencyTrackManager: this.audioLatencyTrackManager, // For VAD state
+      onQualityChange: (newQuality, oldQuality) => {
+        // Only log significant state changes (not degraded/poor transitions)
+        const significantStates = ['dead', 'reconnecting', 'offline'];
+        if (significantStates.includes(newQuality) || significantStates.includes(oldQuality)) {
+          console.log(`${this.type} connection: ${oldQuality} → ${newQuality}`);
+        }
+      },
+      onReconnectNeeded: () => {
+        this._handleReconnection();
+      }
+    });
   }
 
   async getLanguages(type = "source") {
@@ -157,29 +175,39 @@ class DeepLVoiceClient {
   async connect(streamingUrl, token) {
     return new Promise((resolve, reject) => {
       const wsUrl = `${streamingUrl}?token=${token}`;
-      
+
       this.ws = new WebSocket(wsUrl);
       this.ws.onopen = () => {
-        console.log('WebSocket connection established');
+        console.log('✅ WebSocket connection established');
         this.isConnected = true;
+
+        // Start health monitoring
+        this.healthMonitor.start();
 
         if (this.onConnect) {
           this.onConnect();
         }
         resolve();
       };
-      
+
       this.ws.onmessage = (event) => {
+        // Record message received for health monitoring
+        this.healthMonitor.recordMessage();
         this.handleMessage(event.data);
       };
-      
+
       this.ws.onerror = (error) => {
         console.error('❌ WebSocket error:', error);
+        // Record error for health monitoring
+        this.healthMonitor.recordError();
       };
-      
+
       this.ws.onclose = (event) => {
-        console.log('🔴 WebSocket closed: ', event.reason);
+        console.log('🔴 WebSocket closed:', event.reason);
         this.isConnected = false;
+
+        // Stop health monitoring
+        this.healthMonitor.stop();
 
         if (this.onDisconnect) {
           this.onDisconnect(event);
@@ -195,11 +223,31 @@ class DeepLVoiceClient {
     console.log('Disconnecting...');
     this.isConnected = false;
     this.shouldReconnect = false;
+
+    // Stop health monitoring
+    this.healthMonitor.stop();
+
     if (this.ws) {
       // Set flag to prevent auto-reconnect
       this.ws.close();
       this.ws = null;
     }
+  }
+
+  /**
+   * Get connection health metrics
+   * @returns {Object} - Health data
+   */
+  getConnectionHealth() {
+    return this.healthMonitor.getHealth();
+  }
+
+  /**
+   * Update health monitoring configuration
+   * @param {Object} config - Partial configuration to update
+   */
+  updateHealthConfig(config) {
+    this.healthMonitor.updateConfig(config);
   }
 
   handleMessage(data) {
@@ -271,14 +319,13 @@ class DeepLVoiceClient {
           this.onStreamEnd();
         }
       }
-      else if (message.error) { 
+      else if (message.error) {
         if (this.onError) {
           this.onError(new Error(message.error));
-          // close and restart the session
-          this.disconnect();
-          this.startSession(this.sessionConfig).catch(error => {
-              console.error('Failed to restart session after error:', error);
-          });
+          // Trigger reconnection through health monitor (with backoff)
+          if (!this.isReconnecting) {
+            this._handleReconnection();
+          }
         }
       }
       else {
@@ -323,17 +370,11 @@ class DeepLVoiceClient {
   }
 
   sendAudio(audioBuffer) {
-    if (!this.isConnected) {
-      if (this.shouldReconnect) {
-        console.warn('WebSocket not connected, attempting to start new session...');
-        this.audioLatencyTrackManager.resetLatencyTracking(this.type);
-        this.startSession(this.sessionConfig).catch(error => {
-            console.error('Failed to start new session during sendAudio:', error);
-        });
-      }
+    // Drop audio chunks if not connected or WebSocket is null (e.g., during reconnection)
+    if (!this.isConnected || !this.ws) {
       return;
     }
-    
+
     try {
         const base64Audio = audioBuffer.toString('base64');
         const payload = JSON.stringify({
@@ -349,7 +390,7 @@ class DeepLVoiceClient {
 
   // Signal end of audio stream
   endAudio() {
-    if (!this.isConnected) {
+    if (!this.isConnected || !this.ws) {
         return;
     }
     console.log('Signaling end of audio stream');
@@ -381,12 +422,76 @@ class DeepLVoiceClient {
 
   /**
    * Reconnect to an existing session
-   * 
+   *
    * @returns {Promise<void>}
    */
   async reconnect() {
     const session = await this.requestReconnection();
     await this.connect(session.streaming_url, session.token);
+  }
+
+  /**
+   * Handle automatic reconnection when connection is dead
+   * @private
+   */
+  async _handleReconnection() {
+    if (!this.shouldReconnect) {
+      console.log(`🔄 Auto-reconnection disabled for ${this.type}, skipping`);
+      return;
+    }
+
+    // Set guard flag to prevent duplicate reconnections
+    this.isReconnecting = true;
+
+    // Mark as reconnecting
+    this.healthMonitor.startReconnecting();
+
+    // Close zombie connection
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+
+    // Calculate backoff
+    const backoffMs = this.healthMonitor.getNextBackoff();
+
+    console.log(`🔄 ${this.type} reconnecting in ${backoffMs}ms...`);
+
+    // Wait for backoff
+    await new Promise(resolve => setTimeout(resolve, backoffMs));
+
+    try {
+      console.log(`🔄 Attempting reconnection for ${this.type}...`);
+
+      // Reset latency tracking for new connection
+      if (this.audioLatencyTrackManager) {
+        this.audioLatencyTrackManager.resetLatencyTracking(this.type);
+      }
+
+      // Start new session
+      await this.startSession(this.sessionConfig);
+
+      // Success!
+      console.log(`✅ ${this.type} reconnected successfully`);
+      this.healthMonitor.reconnectionSucceeded();
+      this.isReconnecting = false; // Clear guard flag
+
+    } catch (error) {
+      console.error(`❌ ${this.type} reconnection failed:`, error);
+
+      // Check if we should keep trying
+      const keepTrying = this.healthMonitor.reconnectionFailed();
+
+      if (keepTrying && this.shouldReconnect) {
+        console.log(`🔄 Retrying ${this.type} reconnection...`);
+        // Recursively try again (will use new backoff)
+        // Note: isReconnecting stays true for retry
+        this._handleReconnection();
+      } else {
+        console.error(`❌ ${this.type} giving up after ${this.healthMonitor.reconnectAttempts} attempts`);
+        this.isReconnecting = false; // Clear guard flag
+      }
+    }
   }
 }
 
