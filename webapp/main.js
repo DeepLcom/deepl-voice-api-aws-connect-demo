@@ -5,7 +5,7 @@ import "amazon-connect-streams";
 
 import MicrophoneStream from "microphone-stream";
 
-import { getConnectURLS, addUpdateLocalStorageKey, getLocalStorageValueByKey, base64ToArrayBuffer, isStringUndefinedNullEmpty } from "./utils/commonUtility";
+import { getConnectURLS, addUpdateLocalStorageKey, getLocalStorageValueByKey, base64ToArrayBuffer, isStringUndefinedNullEmpty, isDebugMode } from "./utils/commonUtility";
 import {
   AGENT_TRANSLATION_TO_AGENT_VOLUME,
   AUDIO_FEEDBACK_FILE_PATH,
@@ -58,6 +58,9 @@ let DeepLVoiceClientAgent;
 
 // DeepLVoiceClient to manage the connection and audio streaming with DeepL Voice for Customer
 let DeepLVoiceClientCustomer;
+
+// AudioLatencyTrackManager to manage audio latency tracking and VAD state
+let audioLatencyTrackManager;
 
 // SearchableSelect instances for language selection
 let customerLanguageSearchable;
@@ -495,7 +498,7 @@ async function onContactConnecting(contact) {
   CCP_V2V.UI.agentVoiceIdSelect.disabled = true;
   CCP_V2V.UI.customerVoiceIdSelect.disabled = true;
 
-  const audioLatencyTrackManager = new AudioLatencyTrackManager();
+  audioLatencyTrackManager = new AudioLatencyTrackManager();
   await agentStartSession(audioLatencyTrackManager);
   await customerStartSession(audioLatencyTrackManager);
 }
@@ -1047,7 +1050,7 @@ async function reloadConfigs() {
   await agentStopStreaming();
   await customerStopStreaming();
 
-  const audioLatencyTrackManager = new AudioLatencyTrackManager();
+  audioLatencyTrackManager = new AudioLatencyTrackManager();
   await agentStartSession(audioLatencyTrackManager);
   await agentStartStreaming();
   await customerStartSession(audioLatencyTrackManager);
@@ -1336,4 +1339,63 @@ function disableMicrophoneAndSpeakerSelection() {
   CCP_V2V.UI.echoCancellationCheckbox.disabled = true;
   CCP_V2V.UI.noiseSuppressionCheckbox.disabled = true;
   CCP_V2V.UI.autoGainControlCheckbox.disabled = true;
+}
+
+// =============================================================================
+// DEBUG DASHBOARD INITIALIZATION
+// =============================================================================
+
+/**
+ * Initialize Debug Dashboard when ?debug=true URL parameter is present.
+ * The dashboard dynamically loads only in debug mode to avoid production bundle impact.
+ *
+ * Features:
+ * - Real-time WebSocket health monitoring for Agent and Customer connections
+ * - Quality timeline visualization (60 seconds)
+ * - VAD-aware indicators
+ * - Force reconnect controls
+ * - Configuration overrides
+ * - Export health data
+ * - Reconnection history
+ *
+ * Usage:
+ * 1. Add ?debug=true to URL
+ * 2. Dashboard appears at bottom of screen (collapsed by default)
+ * 3. Access via console: window.debugDashboard
+ */
+if (isDebugMode()) {
+  console.log('🔧 Debug mode enabled - loading health dashboard...');
+
+  // Wait for DOM to be ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDebugDashboard);
+  } else {
+    initDebugDashboard();
+  }
+}
+
+function initDebugDashboard() {
+  // Dynamic import to avoid bundling in production
+  import('./components/DebugDashboard.js').then(module => {
+    const DebugDashboard = module.DebugDashboard;
+
+    // Create dashboard instance with getter functions
+    // This allows the dashboard to access clients dynamically as they're created/destroyed
+    const dashboard = new DebugDashboard({
+      get agentClient() { return window.DeepLVoiceClientAgent; },
+      get customerClient() { return window.DeepLVoiceClientCustomer; },
+      get audioLatencyTrackManager() { return audioLatencyTrackManager; },
+    });
+
+    // Mount to body
+    dashboard.mount(document.body);
+
+    // Expose to window for console debugging
+    window.debugDashboard = dashboard;
+
+    console.log('✅ Debug dashboard loaded successfully');
+    console.log('💡 Access via: window.debugDashboard');
+  }).catch(error => {
+    console.error('❌ Failed to load debug dashboard:', error);
+  });
 }
