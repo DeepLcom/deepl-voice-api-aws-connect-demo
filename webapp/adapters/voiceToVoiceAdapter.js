@@ -81,7 +81,7 @@ class DeepLVoiceClient {
    * @param {string} config.sourceLanguageMode - 'auto' for auto-detection or 'fixed' for specific language code
    * @param {string} config.sourceMediaContentType - Audio format (e.g., 'audio/l16;rate=16000', 'audio/opus', 'audio/webm;codecs=opus')
    * @param {string} config.targetMediaContentType - Desired output audio format (e.g., 'audio/l16;rate=16000', 'audio/opus', 'audio/webm;codecs=opus')
-   * @param {string} [config.targetMediaVoice] - Optional desired voice for TTS output (e.g., 'female1', 'male1')
+   * @param {string} [config.targetMediaVoice] - Optional desired voice for TTS output (e.g., 'female', 'male')
    * @param {string[]} [config.glossaryIds] - Optional array of glossary IDs
    * @param {boolean} [config.enableTranscription=true] - Enable source transcription
    * @returns {Promise<Object>} Session details with streaming_url and token
@@ -245,12 +245,11 @@ class DeepLVoiceClient {
       }
       else if (message.target_media_chunk) {
         const update = message.target_media_chunk;
+        const data = update.data;
         
-        if (update.data && update.data.length > 0) {
+        if (data && data.length > 0) {
+          console.log(`${this.type} target media chunk update: ${data.length} bytes`);
           if (this.onAudio) {
-              const targetMediaChunk = message.target_media_chunk;
-              const data = targetMediaChunk.data;
-              console.log(`${this.type} target media chunk update: ${data.length} bytes`);
               this.onAudio(data);
           }
           this.audioLatencyTrackManager.enqueueSynthesis(this.type, receiveTime);
