@@ -82,6 +82,7 @@ class DeepLVoiceClient {
    * @param {string} config.sourceMediaContentType - Audio format (e.g., 'audio/l16;rate=16000', 'audio/opus', 'audio/webm;codecs=opus')
    * @param {string} config.targetMediaContentType - Desired output audio format (e.g., 'audio/l16;rate=16000', 'audio/opus', 'audio/webm;codecs=opus')
    * @param {string} [config.targetMediaVoice] - Optional desired voice for TTS output (e.g., 'female', 'male')
+   * @param {string} config.formality - Optional desired translation formality (formal, informal, default)
    * @param {string[]} [config.glossaryIds] - Optional array of glossary IDs
    * @param {boolean} [config.enableTranscription=true] - Enable source transcription
    * @returns {Promise<Object>} Session details with streaming_url and token
