@@ -305,15 +305,6 @@ const initEventListeners = () => {
   CCP_V2V.UI.speakerSaveButton.addEventListener("click", () => addUpdateLocalStorageKey("selectedSpeakerId", CCP_V2V.UI.speakerSelect.value));
   CCP_V2V.UI.micSaveButton.addEventListener("click", () => addUpdateLocalStorageKey("selectedMicId", CCP_V2V.UI.micSelect.value));
 
-  CCP_V2V.UI.customerStreamMicCheckbox.addEventListener("change", (event) => {
-    if (event.target.checked) {
-      CCP_V2V.UI.fromCustomerAudioElement.muted = false;
-      CCP_V2V.UI.fromCustomerAudioElement.volume = parseFloat(CCP_V2V.UI.customerStreamMicVolume.value);
-    } else {
-      CCP_V2V.UI.fromCustomerAudioElement.muted = true;
-    }
-  });
-
   CCP_V2V.UI.customerStreamMicVolume.addEventListener("input", (event) => {
     const micVolume = parseFloat(event.target.value);
     console.log(`${LOGGER_PREFIX} - customerStreamMicVolume input - Setting microphone volume to: ${micVolume}`);
@@ -824,13 +815,9 @@ async function customerStartStreaming() {
       throw new Error('RTCSessionTrackManager is not initialized');
     }
 
-    if (CCP_V2V.UI.customerStreamMicCheckbox.checked === true) {
-      //we want agent to hear the customer's original voice, so we reduce the fromCustomerAudioElement volume
-      CCP_V2V.UI.fromCustomerAudioElement.volume = parseFloat(CCP_V2V.UI.customerStreamMicVolume.value);
-    } else {
-      //we don't want agent to hear the customer's original voice, so we mute the fromCustomerAudioElement
-      CCP_V2V.UI.fromCustomerAudioElement.muted = true;
-    }
+    // set customer to agent source audio level
+    CCP_V2V.UI.fromCustomerAudioElement.muted = false;
+    CCP_V2V.UI.fromCustomerAudioElement.volume = parseFloat(CCP_V2V.UI.customerStreamMicVolume.value);
 
     //Play the audio feedback to customer
     if (CCP_V2V.UI.customerAudioFeedbackEnabledCheckbox.checked === true) {
@@ -873,8 +860,11 @@ async function customerStopStreaming() {
 
 async function agentStartStreaming() {
   try {
+    setAudioElementsSinkIds();
+
     const selectedMic = CCP_V2V.UI.micSelect.value;
     const micConstraints = getMicrophoneConstraints(selectedMic);
+    const micVolume = parseFloat(CCP_V2V.UI.agentStreamMicVolume.value);
 
     // Ensure audio stream managers are initialized
     if (!ToCustomerAudioStreamManager) {
@@ -892,11 +882,10 @@ async function agentStartStreaming() {
     const toCustomerAudioTrack = ToCustomerAudioStreamManager.getAudioTrack();
     RTCSessionTrackManager.replaceTrack(toCustomerAudioTrack, TrackType.POLLY);
 
-    if (CCP_V2V.UI.agentStreamMicCheckbox.checked === true) {
-      await ToCustomerAudioStreamManager.startMicrophone(micConstraints);
-      const micVolume = parseFloat(CCP_V2V.UI.agentStreamMicVolume.value);
+    // set agent to customer source audio level
+    ToCustomerAudioStreamManager.startMicrophone(micConstraints).then(() => {
       ToCustomerAudioStreamManager.setMicrophoneVolume(micVolume);
-    }
+    })
 
     AmazonTranscribeToCustomerAudioStream = await createMicrophoneStream(micConstraints);
     const agentStreamSampleRate = AudioContextMgr.getActualSampleRate();
@@ -944,7 +933,7 @@ async function toggleAgentTranscriptionMute() {
       //Mute the Mic so it is not streamed to Customer
       const selectedMic = CCP_V2V.UI.micSelect.value;
       const micConstraints = getMicrophoneConstraints(selectedMic);
-      if (IsAgentTranscriptionMuted || !CCP_V2V.UI.agentStreamMicCheckbox.checked) {
+      if (IsAgentTranscriptionMuted) {
         ToCustomerAudioStreamManager.stopMicrophone();
       } else {
         await ToCustomerAudioStreamManager.startMicrophone(micConstraints, parseFloat(CCP_V2V.UI.agentStreamMicVolume.value));
@@ -1349,6 +1338,7 @@ function enableMicrophoneAndSpeakerSelection() {
   CCP_V2V.UI.echoCancellationCheckbox.disabled = false;
   CCP_V2V.UI.noiseSuppressionCheckbox.disabled = false;
   CCP_V2V.UI.autoGainControlCheckbox.disabled = false;
+  CCP_V2V.UI.agentMuteTranscriptionButton.textContent = "Mute"
 }
 
 function disableMicrophoneAndSpeakerSelection() {
