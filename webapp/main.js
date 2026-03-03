@@ -434,9 +434,10 @@ const initCCP = async (onConnectInitialized) => {
 };
 
 const setLatencyTrackingUIVisibility = () => {
-  console.log(`${LOGGER_PREFIX} - Latency tracking enabled: ${LATENCY_TRACKING_ENABLED}`);
-  if (!LATENCY_TRACKING_ENABLED) {
-    console.log(`${LOGGER_PREFIX} - Latency tracking is disabled, hiding latency tracking UI panels`);
+  const debugMode = isDebugMode();
+  console.log(`${LOGGER_PREFIX} - Latency tracking enabled: ${LATENCY_TRACKING_ENABLED}, Debug mode: ${debugMode}`);
+  if (!LATENCY_TRACKING_ENABLED || !debugMode) {
+    console.log(`${LOGGER_PREFIX} - Latency tracking is disabled or debug mode is off, hiding latency tracking UI panels`);
     CCP_V2V.UI.latencyTrackingPanels.forEach((panel) => {
       panel.style.display = "none";
     });
