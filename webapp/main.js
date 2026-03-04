@@ -1331,6 +1331,12 @@ function clearTranscriptCards() {
   document.querySelectorAll(".transcript-container .transcript-card").forEach((card) => card.remove());
 }
 
+function cleanUpUI() {
+  // Clear transcription text output divs when contact ends
+  CCP_V2V.UI.customerTranscriptionTextOutputDiv.textContent = "";
+  CCP_V2V.UI.agentTranscriptionTextOutputDiv.textContent = "";
+}
+
 function getMicrophoneConstraints(deviceId) {
   let microphoneConstraints = {
     audio: {
