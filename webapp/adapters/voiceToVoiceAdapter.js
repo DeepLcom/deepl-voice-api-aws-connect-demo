@@ -141,7 +141,11 @@ class DeepLVoiceClient {
     if (config.enableTranscription !== undefined) {
       body.enable_transcription = config.enableTranscription;
     }
-    console.log('Requesting session with body:', body);
+
+    // Log TTS provider selection
+    const usingElevenLabs = body.early_access_experimental_mode === 'use_external_speech_provider';
+    console.log(`🚀 Requesting ${this.type} session with ${usingElevenLabs ? 'ElevenLabs' : 'DeepL Internal'} TTS`);
+    console.log('Session request body:', JSON.stringify(body, null, 2));
 
     try {
       const response = await fetch(this.requestSessionProxy, {

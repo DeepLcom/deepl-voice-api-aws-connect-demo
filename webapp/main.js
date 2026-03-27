@@ -237,6 +237,7 @@ const bindUIElements = () => {
     customerTranslateToLanguageSaveButton: document.getElementById("customerTranslateToLanguageSaveButton"),
     customerTranslatedTextOutputDiv: document.getElementById("customerTranslatedTextOutputDiv"),
     //Synthesis Customer UI Elements
+    customerTtsProviderSelect: document.getElementById("customerTtsProviderSelect"),
     customerVoiceIdSelect: document.getElementById("customerVoiceIdSelect"),
     customerVoiceIdSaveButton: document.getElementById("customerVoiceIdSaveButton"),
     customerPollyLanguageCodeSelect: document.getElementById("customerPollyLanguageCodeSelect"),
@@ -272,6 +273,7 @@ const bindUIElements = () => {
     agentTranslateTextButton: document.getElementById("agentTranslateTextButton"),
     agentTranslatedTextOutputDiv: document.getElementById("agentTranslatedTextOutputDiv"),
     //Synthesis Agent UI Elements
+    agentTtsProviderSelect: document.getElementById("agentTtsProviderSelect"),
     agentVoiceIdSelect: document.getElementById("agentVoiceIdSelect"),
     agentVoiceIdSaveButton: document.getElementById("agentVoiceIdSaveButton"),
     agentPollyLanguageCodeSelect: document.getElementById("agentPollyLanguageCodeSelect"),
@@ -341,6 +343,11 @@ const initEventListeners = () => {
     await reloadConfigs();
   })
   //Synthesis Customer UI buttons
+  CCP_V2V.UI.customerTtsProviderSelect.addEventListener("change", async (e) => {
+    const provider = e.target.value;
+    addUpdateLocalStorageKey("customerTtsProvider", provider);
+    console.info(`${LOGGER_PREFIX} - Customer TTS provider changed to: ${provider} (${provider === 'elevenlabs' ? 'ElevenLabs' : 'DeepL Internal'})`);
+  });
   CCP_V2V.UI.customerVoiceIdSelect.addEventListener("change", async (e) => {
     addUpdateLocalStorageKey("customerVoiceId", CCP_V2V.UI.customerVoiceIdSelect.value);
     if (e.target.value !== "disabled") await reloadConfigs();
@@ -394,6 +401,11 @@ const initEventListeners = () => {
     addUpdateLocalStorageKey("agentFormality", CCP_V2V.UI.agentFormalitySelect.value)
     await reloadConfigs();
   })
+  CCP_V2V.UI.agentTtsProviderSelect.addEventListener("change", async (e) => {
+    const provider = e.target.value;
+    addUpdateLocalStorageKey("agentTtsProvider", provider);
+    console.info(`${LOGGER_PREFIX} - Agent TTS provider changed to: ${provider} (${provider === 'elevenlabs' ? 'ElevenLabs' : 'DeepL Internal'})`);
+  });
   CCP_V2V.UI.agentVoiceIdSelect.addEventListener("change", async (e) => {
     addUpdateLocalStorageKey("agentVoiceId", CCP_V2V.UI.agentVoiceIdSelect.value);
     if (e.target.value !== "disabled") await reloadConfigs();
@@ -788,7 +800,7 @@ async function customerStartSession(audioLatencyTrackManager) {
   // Expose to window for debugging (can call window.DeepLVoiceClientCustomer.getConnectionHealth() in console)
   window.DeepLVoiceClientCustomer = DeepLVoiceClientCustomer;
   try {
-    await DeepLVoiceClientCustomer.startSession({
+    const sessionConfig = {
       sourceLanguage: CCP_V2V.UI.customerTranslateFromLanguageSelect.value,
       targetLanguages: [CCP_V2V.UI.customerTranslateToLanguageSelect.value],
       targetMediaLanguages: [CCP_V2V.UI.customerTranslateToLanguageSelect.value],
@@ -796,7 +808,20 @@ async function customerStartSession(audioLatencyTrackManager) {
       targetMediaVoice: CCP_V2V.UI.customerVoiceIdSelect.value !== "disabled" ? CCP_V2V.UI.customerVoiceIdSelect.value : "female",
       sourceMediaContentType: `audio/pcm;encoding=s16le;rate=${AUDIO_INGEST_SAMPLE_RATE}`,
       targetMediaContentType: `audio/pcm;encoding=s16le;rate=${AUDIO_OUTPUT_SAMPLE_RATE}`,
-    });
+    };
+
+    // Add experimental flag if ElevenLabs is selected
+    const ttsProvider = CCP_V2V.UI.customerTtsProviderSelect.value;
+    if (ttsProvider === 'elevenlabs') {
+      sessionConfig.early_access_experimental_mode = 'use_external_speech_provider';
+      console.info(`${LOGGER_PREFIX} - 🎤 Customer session: Using ElevenLabs TTS (experimental mode enabled)`);
+    } else {
+      console.info(`${LOGGER_PREFIX} - 🎤 Customer session: Using DeepL Internal TTS`);
+    }
+
+    console.info(`${LOGGER_PREFIX} - Customer session config:`, JSON.stringify(sessionConfig, null, 2));
+
+    await DeepLVoiceClientCustomer.startSession(sessionConfig);
   } catch (error) {
     console.error(`${LOGGER_PREFIX} - customerStartSession - Error starting customer session:`, error);
     raiseError(`Error starting customer session: ${error}`);
@@ -814,7 +839,7 @@ async function agentStartSession(audioLatencyTrackManager) {
   // Expose to window for debugging (can call window.DeepLVoiceClientAgent.getConnectionHealth() in console)
   window.DeepLVoiceClientAgent = DeepLVoiceClientAgent;
   try {
-    await DeepLVoiceClientAgent.startSession({
+    const sessionConfig = {
       sourceLanguage: CCP_V2V.UI.agentTranslateFromLanguageSelect.value,
       targetLanguages: [CCP_V2V.UI.agentTranslateToLanguageSelect.value],
       targetMediaLanguages: [CCP_V2V.UI.agentTranslateToLanguageSelect.value],
@@ -822,7 +847,20 @@ async function agentStartSession(audioLatencyTrackManager) {
       formality: CCP_V2V.UI.agentFormalitySelect.value,
       sourceMediaContentType: `audio/pcm;encoding=s16le;rate=${AUDIO_INGEST_SAMPLE_RATE}`,
       targetMediaContentType: `audio/pcm;encoding=s16le;rate=${AUDIO_OUTPUT_SAMPLE_RATE}`,
-    });
+    };
+
+    // Add experimental flag if ElevenLabs is selected
+    const ttsProvider = CCP_V2V.UI.agentTtsProviderSelect.value;
+    if (ttsProvider === 'elevenlabs') {
+      sessionConfig.early_access_experimental_mode = 'use_external_speech_provider';
+      console.info(`${LOGGER_PREFIX} - 🎤 Agent session: Using ElevenLabs TTS (experimental mode enabled)`);
+    } else {
+      console.info(`${LOGGER_PREFIX} - 🎤 Agent session: Using DeepL Internal TTS`);
+    }
+
+    console.info(`${LOGGER_PREFIX} - Agent session config:`, JSON.stringify(sessionConfig, null, 2));
+
+    await DeepLVoiceClientAgent.startSession(sessionConfig);
   } catch (error) {
     console.error(`${LOGGER_PREFIX} - agentStartSession - Error starting agent session:`, error);
     raiseError(`Error starting agent session: ${error}`);
@@ -1259,9 +1297,25 @@ function loadVoiceIds() {
     CCP_V2V.UI.customerVoiceIdSelect.value = savedCustomerVoiceId;
   }
 
+  const savedCustomerTtsProvider = getLocalStorageValueByKey("customerTtsProvider");
+  if (savedCustomerTtsProvider) {
+    CCP_V2V.UI.customerTtsProviderSelect.value = savedCustomerTtsProvider;
+  } else {
+    // Default to DeepL
+    CCP_V2V.UI.customerTtsProviderSelect.value = "deepl";
+  }
+
   const savedAgentVoiceId = getLocalStorageValueByKey("agentVoiceId");
   if (savedAgentVoiceId) {
     CCP_V2V.UI.agentVoiceIdSelect.value = savedAgentVoiceId;
+  }
+
+  const savedAgentTtsProvider = getLocalStorageValueByKey("agentTtsProvider");
+  if (savedAgentTtsProvider) {
+    CCP_V2V.UI.agentTtsProviderSelect.value = savedAgentTtsProvider;
+  } else {
+    // Default to DeepL
+    CCP_V2V.UI.agentTtsProviderSelect.value = "deepl";
   }
 }
 
