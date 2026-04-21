@@ -249,68 +249,84 @@ export class AudioStreamManager {
   }
 
   playAudioBuffer(arrayBuffer, volume = 1.0) {
-    const pcmData = new Int16Array(arrayBuffer.buffer, arrayBuffer.byteOffset, arrayBuffer.byteLength / 2);
-    
-    this._chunkBuffer.push({ arrayBuffer, volume, samples: pcmData.length });
+    try {
+      this.stopAudioFeedback();
 
-    const totalSamples = this._chunkBuffer.reduce((sum, c) => sum + c.samples, 0);
-
-    if (!this._bufferFlushed && totalSamples >= this.BUFFER_TARGET_SAMPLES) {
-      this._bufferFlushed = true;
-      // Flush all buffered chunks then continue scheduling normally
-      for (const chunk of this._chunkBuffer) {
-        this._playbackChain = this._playbackChain.then(() =>
-          this._processChunk(chunk.arrayBuffer, chunk.volume)
-        );
+      const pcmData = new Int16Array(arrayBuffer.buffer, arrayBuffer.byteOffset, arrayBuffer.byteLength / 2);
+      const floatData = new Float32Array(pcmData.length);
+      for (let i = 0; i < pcmData.length; i++) {
+        floatData[i] = pcmData[i] / 32768.0;
       }
-      this._chunkBuffer = [];
-    } else if (this._bufferFlushed) {
-      // Already playing, schedule directly
-      this._playbackChain = this._playbackChain.then(() =>
-        this._processChunk(arrayBuffer, volume)
-      );
+
+      const nativeRate = this.audioContext.sampleRate;
+      const sourceRate = 16000;
+      const resampledData = this._resample_audio(floatData, nativeRate, sourceRate)
+      if (!resampledData) {
+        return
+      }
+
+      const audioBuffer = this.audioContext.createBuffer(1, resampledData.length, nativeRate);
+      audioBuffer.getChannelData(0).set(resampledData);
+
+      const source = this.audioContext.createBufferSource();
+      const gainNode = this.audioContext.createGain();
+      gainNode.gain.value = volume;
+      source.buffer = audioBuffer;
+      source.connect(gainNode);
+      gainNode.connect(this.mediaStreamDestination);
+
+      const now = this.audioContext.currentTime;
+
+      // If nextStartTime is in the past (gap between utterances), snap to now + small lookahead
+      // If it's in the future (mid-utterance), keep scheduling forward
+      if (!this.nextStartTime || this.nextStartTime < now - 0.1) {
+        this.nextStartTime = now + 0.05;
+      }
+
+      source.start(this.nextStartTime);
+      this.nextStartTime += audioBuffer.duration;
+
+      // Only restart feedback — no nextStartTime reset
+      source.onended = () => {
+        if (this.nextStartTime <= this.audioContext.currentTime + 0.06) {
+          if (this.shouldPlayAudioFeedback) this.startAudioFeedback();
+        }
+      };
+
+    } catch (error) {
+      console.error('Error playing audio buffer:', error);
     }
-    // else: still buffering, just accumulate
   }
 
-  async _processChunk(arrayBuffer, volume = 1.0) {
-      try {
-          clearTimeout(this.resetTimer);
-          this.stopAudioFeedback();
-
-          const pcmData = new Int16Array(arrayBuffer.buffer, arrayBuffer.byteOffset, arrayBuffer.byteLength / 2);
-          const floatData = new Float32Array(pcmData.length);
-          for (let i = 0; i < pcmData.length; i++) {
-              floatData[i] = pcmData[i] / 32768.0;
-          }
-
-          const audioBuffer = this.audioContext.createBuffer(1, floatData.length, 16000);
-          audioBuffer.getChannelData(0).set(floatData);
-
-          const source = this.audioContext.createBufferSource();
-          const gainNode = this.audioContext.createGain();
-          gainNode.gain.value = volume;
-          source.buffer = audioBuffer;
-          source.connect(gainNode);
-          gainNode.connect(this.masterCompressor);
-
-          const now = this.audioContext.currentTime;
-          const startAt = Math.max(this.nextStartTime || now, now);
-          const aheadBy = startAt - now;
-          source.playbackRate.value = 1.0; // always 1.0 — no pitch shift ever
-          source.start(startAt);
-          this.nextStartTime = startAt + audioBuffer.duration;
-
-          this.resetTimer = setTimeout(() => {
-              this.nextStartTime = this.audioContext.currentTime;
-              this._bufferFlushed = false; // re-enable buffering for next utterance
-              this._chunkBuffer = [];
-              if (this.shouldPlayAudioFeedback) this.startAudioFeedback();
-          }, Math.max(500, aheadBy * 1000 + 500)); // wait until scheduled audio is actually done + 500ms grace period
-
-      } catch (error) {
-          console.error('Error playing audio buffer:', error);
+  _resample_audio(floatData, nativeRate, sourceRate) {
+    if (nativeRate == sourceRate) {
+      return floatData
+    }
+    try { 
+      const ratio = nativeRate / sourceRate;
+      const outLength = Math.round(floatData.length * ratio);
+      let resampledData = new Float32Array(outLength);
+      for (let i = 0; i < outLength; i++) {
+        const srcIdx = i / ratio;
+        const idx1 = Math.floor(srcIdx);
+        const frac = srcIdx - idx1;
+        const idx0 = Math.max(idx1 - 1, 0);
+        const idx2 = Math.min(idx1 + 1, floatData.length - 1);
+        const idx3 = Math.min(idx1 + 2, floatData.length - 1);
+        const p0 = floatData[idx0];
+        const p1 = floatData[idx1];
+        const p2 = floatData[idx2];
+        const p3 = floatData[idx3];
+        const c1 = 0.5 * (p2 - p0);
+        const c2 = p0 - 2.5 * p1 + 2 * p2 - 0.5 * p3;
+        const c3 = 0.5 * (p3 - p0) + 1.5 * (p1 - p2);
+        resampledData[i] = ((c3 * frac + c2) * frac + c1) * frac + p1;
       }
+      return resampledData;
+    } catch (err) {
+      console.error('Error resampling audio:', err);
+      return null;
+    }
   }
 
   async processQueue() {

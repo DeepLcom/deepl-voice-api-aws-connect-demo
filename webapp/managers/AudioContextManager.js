@@ -7,7 +7,7 @@ const INTERACTION_EVENTS = ["click", "touchstart", "keydown"];
 // SPDX-License-Identifier: MIT-0
 export class AudioContextManager {
   constructor() {
-    this.audioContext = new AudioContext();
+    this.audioContext = new AudioContext({ sampleRate: 48000 })
     this.interactionPromise = null;
     this.isWaitingForInteraction = this.audioContext.state === "suspended"; // AudioContext is suspended until the user makes an interaction with the webpage
     this.setupUserInteractionListeners();
