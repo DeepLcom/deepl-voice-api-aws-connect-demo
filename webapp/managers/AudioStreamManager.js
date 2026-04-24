@@ -249,68 +249,46 @@ export class AudioStreamManager {
   }
 
   playAudioBuffer(arrayBuffer, volume = 1.0) {
-    const pcmData = new Int16Array(arrayBuffer.buffer, arrayBuffer.byteOffset, arrayBuffer.byteLength / 2);
-    
-    this._chunkBuffer.push({ arrayBuffer, volume, samples: pcmData.length });
+    try {
+      this.stopAudioFeedback();
 
-    const totalSamples = this._chunkBuffer.reduce((sum, c) => sum + c.samples, 0);
-
-    if (!this._bufferFlushed && totalSamples >= this.BUFFER_TARGET_SAMPLES) {
-      this._bufferFlushed = true;
-      // Flush all buffered chunks then continue scheduling normally
-      for (const chunk of this._chunkBuffer) {
-        this._playbackChain = this._playbackChain.then(() =>
-          this._processChunk(chunk.arrayBuffer, chunk.volume)
-        );
+      const pcmData = new Int16Array(arrayBuffer.buffer, arrayBuffer.byteOffset, arrayBuffer.byteLength / 2);
+      let floatData = new Float32Array(pcmData.length);
+      for (let i = 0; i < pcmData.length; i++) {
+        floatData[i] = pcmData[i] / 32768.0;
       }
-      this._chunkBuffer = [];
-    } else if (this._bufferFlushed) {
-      // Already playing, schedule directly
-      this._playbackChain = this._playbackChain.then(() =>
-        this._processChunk(arrayBuffer, volume)
-      );
+
+      const audioBuffer = this.audioContext.createBuffer(1, floatData.length, this.audioContext.sampleRate);
+      audioBuffer.getChannelData(0).set(floatData);
+
+      const source = this.audioContext.createBufferSource();
+      const gainNode = this.audioContext.createGain();
+      gainNode.gain.value = volume;
+      source.buffer = audioBuffer;
+      source.connect(gainNode);
+      gainNode.connect(this.mediaStreamDestination);
+
+      const now = this.audioContext.currentTime;
+
+      // If nextStartTime is in the past (gap between utterances), snap to now + small lookahead
+      // If it's in the future (mid-utterance), keep scheduling forward
+      if (!this.nextStartTime || this.nextStartTime < now - 0.1) {
+        this.nextStartTime = now + 0.05;
+      }
+
+      source.start(this.nextStartTime);
+      this.nextStartTime += audioBuffer.duration;
+
+      // Only restart feedback — no nextStartTime reset
+      source.onended = () => {
+        if (this.nextStartTime <= this.audioContext.currentTime + 0.06) {
+          if (this.shouldPlayAudioFeedback) this.startAudioFeedback();
+        }
+      };
+
+    } catch (error) {
+      console.error('Error playing audio buffer:', error);
     }
-    // else: still buffering, just accumulate
-  }
-
-  async _processChunk(arrayBuffer, volume = 1.0) {
-      try {
-          clearTimeout(this.resetTimer);
-          this.stopAudioFeedback();
-
-          const pcmData = new Int16Array(arrayBuffer.buffer, arrayBuffer.byteOffset, arrayBuffer.byteLength / 2);
-          const floatData = new Float32Array(pcmData.length);
-          for (let i = 0; i < pcmData.length; i++) {
-              floatData[i] = pcmData[i] / 32768.0;
-          }
-
-          const audioBuffer = this.audioContext.createBuffer(1, floatData.length, 16000);
-          audioBuffer.getChannelData(0).set(floatData);
-
-          const source = this.audioContext.createBufferSource();
-          const gainNode = this.audioContext.createGain();
-          gainNode.gain.value = volume;
-          source.buffer = audioBuffer;
-          source.connect(gainNode);
-          gainNode.connect(this.masterCompressor);
-
-          const now = this.audioContext.currentTime;
-          const startAt = Math.max(this.nextStartTime || now, now);
-          const aheadBy = startAt - now;
-          source.playbackRate.value = 1.0; // always 1.0 — no pitch shift ever
-          source.start(startAt);
-          this.nextStartTime = startAt + audioBuffer.duration;
-
-          this.resetTimer = setTimeout(() => {
-              this.nextStartTime = this.audioContext.currentTime;
-              this._bufferFlushed = false; // re-enable buffering for next utterance
-              this._chunkBuffer = [];
-              if (this.shouldPlayAudioFeedback) this.startAudioFeedback();
-          }, Math.max(500, aheadBy * 1000 + 500)); // wait until scheduled audio is actually done + 500ms grace period
-
-      } catch (error) {
-          console.error('Error playing audio buffer:', error);
-      }
   }
 
   async processQueue() {
