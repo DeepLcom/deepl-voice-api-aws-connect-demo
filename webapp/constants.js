@@ -12,6 +12,8 @@ export const TRANSCRIBE_PARTIAL_RESULTS_STABILITY = ["low", "medium", "high"];
 export const AUDIO_FEEDBACK_FILE_PATH = "./assets/background_noise.wav";
 
 // Audio constants
+export const SYNTH_DUCK_GAIN = 0.1;     // Gain applied to synth playback during barge-in (0 = mute, 1 = full)
+export const VAD_HOLD_TIME_MS = 500;    // How long after VAD drops to wait before unducking
 export const AUDIO_INGEST_SAMPLE_RATE = 16000;
 export const AUDIO_OUTPUT_SAMPLE_RATE = 16000;
 export const BUFFER_LEN = 3200;

@@ -1,6 +1,6 @@
 // Copyright 2025 Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
-import { LOGGER_PREFIX } from "../constants";
+import { LOGGER_PREFIX, SYNTH_DUCK_GAIN } from "../constants";
 import { isStringUndefinedNullEmpty } from "../utils/commonUtility";
 
 export class AudioStreamManager {
@@ -18,6 +18,11 @@ export class AudioStreamManager {
     this.masterCompressor.release.value = 0.25;    // 250ms release
     this.masterCompressor.connect(this.mediaStreamDestination);
 
+    // Duck gain node — sits between per-source gains and the destination
+    this.duckGainNode = this.audioContext.createGain();
+    this.duckGainNode.gain.value = 1.0;
+    this.duckGainNode.connect(this.mediaStreamDestination);
+
     // Set up permanent stream
     this.audioElement.srcObject = this.mediaStreamDestination.stream;
     // Store the audio track
@@ -27,6 +32,8 @@ export class AudioStreamManager {
     // Queue for managing multiple audio requests
     this.audioQueue = [];
     this.isPlaying = false;
+
+    this.activeSources = [];
 
     this.audioFeedbackNode = null;
     this.shouldPlayAudioFeedback = false;
@@ -262,11 +269,12 @@ export class AudioStreamManager {
       audioBuffer.getChannelData(0).set(floatData);
 
       const source = this.audioContext.createBufferSource();
+      this.activeSources.push(source);
       const gainNode = this.audioContext.createGain();
       gainNode.gain.value = volume;
       source.buffer = audioBuffer;
       source.connect(gainNode);
-      gainNode.connect(this.mediaStreamDestination);
+      gainNode.connect(this.duckGainNode);
 
       const now = this.audioContext.currentTime;
 
@@ -281,6 +289,7 @@ export class AudioStreamManager {
 
       // Only restart feedback — no nextStartTime reset
       source.onended = () => {
+        this.activeSources = this.activeSources.filter(s => s !== source);
         if (this.nextStartTime <= this.audioContext.currentTime + 0.06) {
           if (this.shouldPlayAudioFeedback) this.startAudioFeedback();
         }
@@ -344,6 +353,26 @@ export class AudioStreamManager {
 
   clearQueue() {
     this.audioQueue = [];
+  }
+
+  stopPlayback() {
+    const sources = this.activeSources.splice(0);
+    for (const s of sources) {
+      try { s.stop(); } catch (_) {}
+    }
+    this.nextStartTime = 0;
+  }
+
+  duckPlayback() {
+    const gain = this.duckGainNode.gain;
+    gain.cancelScheduledValues(this.audioContext.currentTime);
+    gain.setTargetAtTime(SYNTH_DUCK_GAIN, this.audioContext.currentTime, 0.05);
+  }
+
+  unduckPlayback() {
+    const gain = this.duckGainNode.gain;
+    gain.cancelScheduledValues(this.audioContext.currentTime);
+    gain.setTargetAtTime(1.0, this.audioContext.currentTime, 0.15);
   }
 
   getState() {

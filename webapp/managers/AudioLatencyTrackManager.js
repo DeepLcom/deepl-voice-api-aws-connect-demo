@@ -2,6 +2,7 @@ import {
     LOGGER_PREFIX,
     LATENCY_TRACKING_ENABLED,
     VAD_RMS_MIN_THRESHOLD,
+    VAD_HOLD_TIME_MS,
     TURN_LATENCY_MAX_MS_GOOD,
     TURN_LATENCY_MAX_MS_OK,
     AUDIO_INGEST_SAMPLE_RATE,
@@ -84,6 +85,10 @@ export class AudioLatencyTrackManager {
         this.agentVoiceToCustomerSynthesisLatencies = [];
 
         this.vadRmsMinThreshold = VAD_RMS_MIN_THRESHOLD // Voice Activity Detection minimum rms threshold
+        this.onVoiceActivityStart = null;
+        this.onVoiceActivityStop = null;
+        this._wasSpeaking = { customer: false, agent: false };
+        this._stopTimers = { customer: null, agent: null };
 
         // --- Async work queue via MessageChannel ---
         this._queue = [];
@@ -381,6 +386,18 @@ export class AudioLatencyTrackManager {
         } else if (type === 'agent') {
             this.agentSpeaking = voiceDetected;
         }
+
+        if (voiceDetected && !this._wasSpeaking[type]) {
+            clearTimeout(this._stopTimers[type]);
+            this._stopTimers[type] = null;
+            this.onVoiceActivityStart?.(type);
+        } else if (!voiceDetected && this._wasSpeaking[type]) {
+            this._stopTimers[type] = setTimeout(() => {
+                this._stopTimers[type] = null;
+                this.onVoiceActivityStop?.(type);
+            }, VAD_HOLD_TIME_MS);
+        }
+        this._wasSpeaking[type] = voiceDetected;
 
         if (!LATENCY_TRACKING_ENABLED) return;
 

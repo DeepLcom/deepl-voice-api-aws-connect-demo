@@ -285,6 +285,7 @@ const bindUIElements = () => {
     customerStreamMicVolume: document.getElementById("customerStreamMicVolume"),
     customerStreamTranslationCheckbox: document.getElementById("customerStreamTranslationCheckbox"),
     customerAudioFeedbackEnabledCheckbox: document.getElementById("customerAudioFeedbackEnabledCheckbox"),
+    customerInterruptOnSpeakCheckbox: document.getElementById("customerInterruptOnSpeakCheckbox"),
     //Translate Customer UI Elements - New simplified
     customerLanguageSelect: document.getElementById("customerLanguageSelect"),
     customerLanguageSaveButton: document.getElementById("customerLanguageSaveButton"),
@@ -316,6 +317,7 @@ const bindUIElements = () => {
     agentMuteTranscriptionButton: document.getElementById("agentMuteTranscriptionButton"),
     agentTranscriptionTextOutputDiv: document.getElementById("agentTranscriptionTextOutputDiv"),
     agentAudioFeedbackEnabledCheckbox: document.getElementById("agentAudioFeedbackEnabledCheckbox"),
+    agentInterruptOnSpeakCheckbox: document.getElementById("agentInterruptOnSpeakCheckbox"),
     agentStreamMicCheckbox: document.getElementById("agentStreamMicCheckbox"),
     agentStreamMicVolume: document.getElementById("agentStreamMicVolume"),
     agentStreamTranslationCheckbox: document.getElementById("agentStreamTranslationCheckbox"),
@@ -586,6 +588,23 @@ function subscribeToContactEvents() {
   });
 }
 
+function wireVADInterruptCallback() {
+  audioLatencyTrackManager.onVoiceActivityStart = (type) => {
+    if (type === 'customer' && CCP_V2V.UI.customerInterruptOnSpeakCheckbox?.checked) {
+      ToCustomerAudioStreamManager?.duckPlayback();
+    } else if (type === 'agent' && CCP_V2V.UI.agentInterruptOnSpeakCheckbox?.checked) {
+      ToAgentAudioStreamManager?.duckPlayback();
+    }
+  };
+  audioLatencyTrackManager.onVoiceActivityStop = (type) => {
+    if (type === 'customer' && CCP_V2V.UI.customerInterruptOnSpeakCheckbox?.checked) {
+      ToCustomerAudioStreamManager?.unduckPlayback();
+    } else if (type === 'agent' && CCP_V2V.UI.agentInterruptOnSpeakCheckbox?.checked) {
+      ToAgentAudioStreamManager?.unduckPlayback();
+    }
+  };
+}
+
 async function onContactConnecting(contact) {
   console.info(`${LOGGER_PREFIX} - contact is connecting:`, contact.contactId);
   if (customerLanguageSearchable) customerLanguageSearchable.disable();
@@ -596,6 +615,7 @@ async function onContactConnecting(contact) {
   CCP_V2V.UI.customerVoiceIdSelect.disabled = true;
 
   audioLatencyTrackManager = new AudioLatencyTrackManager();
+  wireVADInterruptCallback();
   await agentStartSession(audioLatencyTrackManager);
   await customerStartSession(audioLatencyTrackManager);
 }
@@ -1263,6 +1283,7 @@ async function reloadConfigs() {
   await customerStopStreaming();
 
   audioLatencyTrackManager = new AudioLatencyTrackManager();
+  wireVADInterruptCallback();
   await agentStartSession(audioLatencyTrackManager);
   await agentStartStreaming();
   await customerStartSession(audioLatencyTrackManager);
