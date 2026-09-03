@@ -17,6 +17,7 @@ On a high-level, the solution consists of the following components, each contain
 - **cdk-stacks** - AWS CDK stacks:
   - `cdk-backend-stack` with all the backend resources needed for the solution (Amazon Cognito, etc)
   - `cdk-front-end-stack` with front-end resources for hosting the webapp (Amazon S3, Amazon CloudFront distribution)
+- **lambda-functions** - DeepL API proxy AWS Lambda functions (`request-session`, `get-languages`). The webapp cannot call the DeepL API directly from the browser (CORS), so these functions proxy the requests. **They are _not_ deployed by CDK** and must be deployed manually — see [Step 5a](#5a-deploy-the-deepl-proxy-lambda-functions) below.
 
 ## Solution prerequisites
 
@@ -90,10 +91,128 @@ These instructions assume you have completed all the prerequisites, and you have
      and Amazon CloudFront Distribution URL as `webAppURL` from your Frontend stack.
      **Save these values as you will be using them in the next few steps.**
 
-5a. Configure DeepL API Keys for Lambda Functions
+### 5a. Deploy the DeepL proxy Lambda functions
 
-   - The demo uses Lambda functions (`deepl-v2v-request-session` and `deepl-v2v-get-languages`) to proxy requests to the DeepL API
-   - These Lambda functions require environment variables for API keys
+> **Important:** These two Lambda functions are **not** part of the CDK stack, so `npm run cdk:deploy` does **not** create them. You must deploy them manually using the steps below (one-time setup). Without them the webapp has no way to reach the DeepL API and translation will not work.
+
+The webapp talks to DeepL through two Lambda functions, each exposed via a public [Lambda Function URL](https://docs.aws.amazon.com/lambda/latest/dg/lambda-urls.html):
+
+- `deepl-v2v-request-session` - starts a DeepL Voice2Voice realtime session
+- `deepl-v2v-get-languages` - fetches the list of supported languages
+
+The source for both lives under [`lambda-functions/`](lambda-functions/), together with the IAM trust policy and CORS configuration you will reference below.
+
+You can create these resources from the [AWS Lambda Console](https://console.aws.amazon.com/lambda) (create function → Node.js 20.x runtime → paste `index.mjs` → enable a Function URL with auth type `NONE` and CORS `*` → add the environment variables), or use the AWS CLI walkthrough below.
+
+1. Open your terminal and navigate to the `lambda-functions` folder:
+
+   ```bash
+   cd connect-v2v-translation-with-cx-options/lambda-functions
+   ```
+
+2. Set the region you are deploying to (use the same region as the rest of the solution):
+
+   ```bash
+   export REGION=us-east-1
+   ```
+
+3. Build a fresh deployment package for each function from its `index.mjs` source (do **not** rely on the pre-built `.zip` files in the repo — they can be out of date):
+
+   ```bash
+   (cd request-session && zip -qr ../request-session-deploy.zip index.mjs)
+   (cd get-languages && zip -qr ../get-languages-deploy.zip index.mjs)
+   ```
+
+4. Create an execution role for the functions (trust policy provided in [`trust-policy.json`](lambda-functions/trust-policy.json)) and attach the basic execution policy so the functions can write logs:
+
+   ```bash
+   aws iam create-role \
+     --role-name deepl-v2v-lambda-role \
+     --assume-role-policy-document file://trust-policy.json
+
+   aws iam attach-role-policy \
+     --role-name deepl-v2v-lambda-role \
+     --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+   # Capture the role ARN for the next step
+   ROLE_ARN=$(aws iam get-role --role-name deepl-v2v-lambda-role --query 'Role.Arn' --output text)
+   ```
+
+5. Create the two functions (Node.js 20.x, handler `index.handler`):
+
+   ```bash
+   aws lambda create-function \
+     --function-name deepl-v2v-request-session \
+     --runtime nodejs20.x \
+     --handler index.handler \
+     --role "$ROLE_ARN" \
+     --zip-file fileb://request-session-deploy.zip \
+     --timeout 30 \
+     --region "$REGION"
+
+   aws lambda create-function \
+     --function-name deepl-v2v-get-languages \
+     --runtime nodejs20.x \
+     --handler index.handler \
+     --role "$ROLE_ARN" \
+     --zip-file fileb://get-languages-deploy.zip \
+     --timeout 30 \
+     --region "$REGION"
+   ```
+
+   > If you re-run this later to update the code, use `aws lambda update-function-code --function-name <name> --zip-file fileb://<zip> --region "$REGION"` instead of `create-function`.
+
+6. Set the DeepL API key environment variables (see [Step 5b](#5b-configure-deepl-api-keys) for details on the keys):
+
+   ```bash
+   aws lambda update-function-configuration \
+     --function-name deepl-v2v-request-session \
+     --environment "Variables={DEEPL_API_KEY=your-prod-key,DEEPL_DEV_API_KEY=your-dev-key}" \
+     --region "$REGION"
+
+   aws lambda update-function-configuration \
+     --function-name deepl-v2v-get-languages \
+     --environment "Variables={DEEPL_API_KEY=your-prod-key}" \
+     --region "$REGION"
+   ```
+
+7. Enable a public Function URL with CORS on each function (CORS config provided in [`cors-config.json`](lambda-functions/cors-config.json)), then grant public invoke permission:
+
+   ```bash
+   for FN in deepl-v2v-request-session deepl-v2v-get-languages; do
+     aws lambda create-function-url-config \
+       --function-name "$FN" \
+       --auth-type NONE \
+       --cors file://cors-config.json \
+       --region "$REGION"
+
+     aws lambda add-permission \
+       --function-name "$FN" \
+       --statement-id FunctionURLAllowPublicAccess \
+       --action lambda:InvokeFunctionUrl \
+       --principal "*" \
+       --function-url-auth-type NONE \
+       --region "$REGION"
+   done
+   ```
+
+   > The demo uses `NONE` (unauthenticated) Function URLs, matching [`public-url-policy.json`](lambda-functions/public-url-policy.json), so the browser can call them directly. This means anyone with the URL can invoke your functions (and spend your DeepL quota). For anything beyond a demo, restrict access (e.g. `AWS_IAM` auth, a WAF, or an API Gateway in front).
+
+8. Retrieve the two Function URLs — **save them**, you will need them in [Step 5c](#5c-wire-the-lambda-function-urls-into-the-webapp):
+
+   ```bash
+   aws lambda get-function-url-config --function-name deepl-v2v-request-session \
+     --query 'FunctionUrl' --output text --region "$REGION"
+   aws lambda get-function-url-config --function-name deepl-v2v-get-languages \
+     --query 'FunctionUrl' --output text --region "$REGION"
+   ```
+
+### 5b. Configure DeepL API Keys
+
+   - The Lambda functions from Step 5a require DeepL API keys, supplied as environment variables:
+     - `DEEPL_API_KEY` - your **production** DeepL API key (used by both functions)
+     - `DEEPL_DEV_API_KEY` - your **development** DeepL API key (used by `deepl-v2v-request-session` for dev-environment sessions)
+   - If you already set these in Step 5a (step 6) you can skip this step. To set or update them later:
    - **Configure via AWS Console:**
      1. Open [AWS Lambda Console](https://console.aws.amazon.com/lambda)
      2. Select the `deepl-v2v-request-session` function
@@ -102,13 +221,46 @@ These instructions assume you have completed all the prerequisites, and you have
         - Key: `DEEPL_API_KEY`, Value: `[your production DeepL API key]`
         - Key: `DEEPL_DEV_API_KEY`, Value: `[your development DeepL API key]`
      5. Click **Save**
+     6. Repeat for the `deepl-v2v-get-languages` function (it only needs `DEEPL_API_KEY`)
    - **Or configure via AWS CLI:**
      ```bash
      aws lambda update-function-configuration \
        --function-name deepl-v2v-request-session \
        --environment "Variables={DEEPL_API_KEY=your-prod-key,DEEPL_DEV_API_KEY=your-dev-key}"
+
+     aws lambda update-function-configuration \
+       --function-name deepl-v2v-get-languages \
+       --environment "Variables={DEEPL_API_KEY=your-prod-key}"
      ```
    - **Environment Switching:** The demo supports switching between dev and prod environments in debug mode (`?debug=true`). Production environment is used by default.
+
+### 5c. Wire the Lambda Function URLs into the webapp
+
+The webapp reads the two Function URLs from build-time environment variables. You must provide the URLs from Step 5a and rebuild/redeploy the webapp.
+
+> **Do not skip this step.** If these variables are missing, the webapp falls back to hard-coded URLs baked into [`webapp/adapters/voiceToVoiceAdapter.js`](webapp/adapters/voiceToVoiceAdapter.js) that point at a **different AWS account** — your demo would silently use someone else's Lambda functions and DeepL quota. Always point these at the functions you deployed.
+
+1. In your terminal, navigate to the `webapp` folder and create a `.env` file from the example:
+
+   ```bash
+   cd connect-v2v-translation-with-cx-options/webapp
+   cp .env.example .env
+   ```
+
+2. Edit `.env` and set both values to the Function URLs you saved in Step 5a:
+
+   ```bash
+   VITE_GET_LANGUAGES_PROXY=https://<your-get-languages-id>.lambda-url.<region>.on.aws/
+   VITE_REQUEST_SESSION_PROXY=https://<your-request-session-id>.lambda-url.<region>.on.aws/
+   ```
+
+3. Rebuild and redeploy the webapp so the new URLs are baked into the deployed build:
+
+   ```bash
+   cd ../cdk-stacks
+   npm run build:deploy:all
+   ```
+   - **On Windows devices use `npm run build:deploy:all:gitbash`.**
 
 6. Configure Amazon Connect Approved Origins
 

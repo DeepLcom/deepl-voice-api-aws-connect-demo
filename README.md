@@ -21,6 +21,7 @@
 
 - Webapp Authentication is implemented via simple redirect to Amazon Cognito Managed Login Page(s)
 - Due to CORS, Web application accesses DeepL API via AWS Lambda function URL.
+- The DeepL proxy Lambda functions are **not** provisioned by the CDK stacks and must be deployed manually as a one-time step (see [Step 5a of the Setup Guide](SETUP.md#5a-deploy-the-deepl-proxy-lambda-functions))
 - Both Agent Audio and Customer Audio are transcribed locally (agent's browser opening 2 websocket connections to Amazon Transcribe), therefore agent PC performance and network bandwidth need to be checked
 - The demo Webapp provides a full control on Voice to Voice setup (i.e. selecting From and To languages, voices, etc). These parameters would normally be set based on Amazon Connect Contact Attributes
 - The sample project has not been tested with outbound calls, conference or transfers
